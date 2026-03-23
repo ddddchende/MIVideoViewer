@@ -1,0 +1,13 @@
+{
+  "name": "mi-video-viewer",
+  "version": "1.0.0",
+  "description": "小米摄像头录像查看器",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}
