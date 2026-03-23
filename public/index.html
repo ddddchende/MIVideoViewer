@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>小米摄像头录像查看器</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📹 小米摄像头录像查看器</h1>
+        </header>
+        
+        <div class="controls">
+            <div class="control-group">
+                <label>选择摄像头:</label>
+                <select id="cameraSelect">
+                    <option value="">-- 请选择 --</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label>查看模式:</label>
+                <select id="viewMode">
+                    <option value="date">按日期查看</option>
+                    <option value="all">全部时间线</option>
+                </select>
+            </div>
+            
+            <div class="control-group" id="dateGroup">
+                <label>选择日期:</label>
+                <input type="date" id="dateSelect">
+            </div>
+        </div>
+        
+        <div class="stats" id="stats">
+            <span id="videoCount">共 0 个视频</span>
+            <span id="totalDuration">总时长: 0 分钟</span>
+        </div>
+        
+        <div class="timeline-container">
+            <h3>时间线 <span id="timelineDate"></span></h3>
+            <div class="timeline" id="timeline">
+                <div class="timeline-placeholder">请选择摄像头</div>
+            </div>
+            <div class="time-labels" id="timeLabels"></div>
+        </div>
+        
+        <div class="video-container">
+            <div class="video-info" id="videoInfo">
+                <span id="currentVideoName">未选择视频</span>
+                <span id="currentVideoTime"></span>
+            </div>
+            <video id="videoPlayer" controls>
+                您的浏览器不支持视频播放
+            </video>
+        </div>
+        
+        <div class="playlist-container">
+            <h3>播放列表</h3>
+            <div class="playlist" id="playlist"></div>
+        </div>
+    </div>
+    
+    <script src="app.js"></script>
+</body>
+</html>
