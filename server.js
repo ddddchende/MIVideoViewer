@@ -3,9 +3,20 @@ const path = require('path');
 const fs = require('fs');
 
 const app = express();
-const PORT = 3000;
 
-const VIDEO_BASE_PATH = 'X:\\xiaomi_camera_videos';
+let config;
+try {
+    config = JSON.parse(fs.readFileSync('./config.json', 'utf8'));
+} catch (err) {
+    console.log('使用默认配置');
+    config = {
+        videoBasePath: 'X:\\xiaomi_camera_videos',
+        port: 3000
+    };
+}
+
+const PORT = config.port || 3000;
+const VIDEO_BASE_PATH = config.videoBasePath || 'X:\\xiaomi_camera_videos';
 
 app.use(express.static('public'));
 app.use(express.json());
@@ -244,6 +255,25 @@ app.get('/video/:camera/:folder/:filename', (req, res) => {
         });
         
         fs.createReadStream(videoPath).pipe(res);
+    }
+});
+
+app.get('/api/config', (req, res) => {
+    try {
+        const configData = JSON.parse(fs.readFileSync('./config.json', 'utf8'));
+        res.json(configData);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/config', (req, res) => {
+    try {
+        const newConfig = req.body;
+        fs.writeFileSync('./config.json', JSON.stringify(newConfig, null, 2), 'utf8');
+        res.json({ success: true, config: newConfig });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 });
 

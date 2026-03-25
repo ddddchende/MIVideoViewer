@@ -41,12 +41,181 @@ body.fullscreen-mode #videoInfo {
 header {
     text-align: center;
     margin-bottom: 20px;
+    position: relative;
 }
 
 header h1 {
     font-size: 1.8rem;
     color: #fff;
     text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+}
+
+.settings-btn {
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 40px;
+    height: 40px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s, transform 0.2s;
+}
+
+.settings-btn:hover {
+    background: rgba(0, 217, 255, 0.3);
+    transform: translateY(-50%) rotate(90deg);
+}
+
+.settings-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.settings-modal-overlay.show {
+    display: flex;
+}
+
+.settings-modal {
+    background: linear-gradient(135deg, #1a1a3a 0%, #16213e 100%);
+    border-radius: 16px;
+    width: 90%;
+    max-width: 500px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    animation: modalSlideIn 0.3s ease;
+}
+
+@keyframes modalSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.settings-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 24px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.settings-modal-header h2 {
+    font-size: 1.3rem;
+    color: #fff;
+}
+
+.settings-modal-close {
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    font-size: 1.5rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+}
+
+.settings-modal-close:hover {
+    background: rgba(255, 107, 107, 0.3);
+}
+
+.settings-modal-body {
+    padding: 24px;
+}
+
+.setting-item {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.setting-item label {
+    color: #aaa;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.setting-item input {
+    padding: 12px 16px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    color: #fff;
+    font-size: 14px;
+    transition: border-color 0.2s;
+}
+
+.setting-item input:focus {
+    outline: none;
+    border-color: #00d9ff;
+}
+
+.setting-hint {
+    color: #666;
+    font-size: 12px;
+    margin: 0;
+}
+
+.settings-modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    padding: 20px 24px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.settings-btn-cancel,
+.settings-btn-save {
+    padding: 10px 24px;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.settings-btn-cancel {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+
+.settings-btn-cancel:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.settings-btn-save {
+    background: linear-gradient(135deg, #00d9ff 0%, #0099cc 100%);
+    color: #000;
+}
+
+.settings-btn-save:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 217, 255, 0.4);
 }
 
 .controls {
