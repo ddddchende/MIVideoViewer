@@ -38,7 +38,13 @@ const elements = {
     playIcon: document.getElementById('playIcon'),
     pauseIcon: document.getElementById('pauseIcon'),
     fullscreenBtn: document.getElementById('fullscreenBtn'),
-    videoWrapper: document.getElementById('videoWrapper')
+    videoWrapper: document.getElementById('videoWrapper'),
+    settingsBtn: document.getElementById('settingsBtn'),
+    settingsModal: document.getElementById('settingsModal'),
+    settingsModalClose: document.getElementById('settingsModalClose'),
+    settingsCancel: document.getElementById('settingsCancel'),
+    settingsSave: document.getElementById('settingsSave'),
+    videoBasePathInput: document.getElementById('videoBasePath')
 };
 
 let canvas = null;
@@ -963,5 +969,74 @@ async function setDefaultDate() {
     }
 }
 
+let currentConfig = null;
+
+async function loadConfig() {
+    try {
+        const res = await fetch('/api/config');
+        const data = await res.json();
+        currentConfig = data;
+        elements.videoBasePathInput.value = data.videoBasePath || '';
+    } catch (err) {
+        console.error('加载配置失败:', err);
+    }
+}
+
+async function saveConfig() {
+    try {
+        const newConfig = {
+            ...currentConfig,
+            videoBasePath: elements.videoBasePathInput.value
+        };
+        
+        const res = await fetch('/api/config', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(newConfig)
+        });
+        
+        const data = await res.json();
+        if (data.success) {
+            currentConfig = data.config;
+            closeSettingsModal();
+            alert('配置已保存！请重启服务器使配置生效。');
+        }
+    } catch (err) {
+        console.error('保存配置失败:', err);
+        alert('保存配置失败，请检查控制台');
+    }
+}
+
+function openSettingsModal() {
+    loadConfig();
+    elements.settingsModal.classList.add('show');
+}
+
+function closeSettingsModal() {
+    elements.settingsModal.classList.remove('show');
+}
+
+function setupSettings() {
+    elements.settingsBtn.addEventListener('click', openSettingsModal);
+    elements.settingsModalClose.addEventListener('click', closeSettingsModal);
+    elements.settingsCancel.addEventListener('click', closeSettingsModal);
+    elements.settingsSave.addEventListener('click', saveConfig);
+    
+    elements.settingsModal.addEventListener('click', (e) => {
+        if (e.target === elements.settingsModal) {
+            closeSettingsModal();
+        }
+    });
+    
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && elements.settingsModal.classList.contains('show')) {
+            closeSettingsModal();
+        }
+    });
+}
+
+setupSettings();
 initCanvas();
 fetchCameras();
