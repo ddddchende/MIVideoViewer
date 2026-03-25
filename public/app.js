@@ -1,7 +1,7 @@
 const state = {
     cameras: [],
     selectedCamera: '',
-    viewMode: 'date',
+    viewMode: 'all',
     selectedDate: '',
     videos: [],
     currentVideoIndex: -1,
@@ -665,6 +665,12 @@ async function fetchCameras() {
             option.textContent = camera;
             elements.cameraSelect.appendChild(option);
         });
+        
+        if (state.cameras.length > 0) {
+            state.selectedCamera = state.cameras[0];
+            elements.cameraSelect.value = state.selectedCamera;
+            fetchVideos();
+        }
     } catch (err) {
         console.error('获取摄像头列表失败:', err);
     }
@@ -759,37 +765,83 @@ function updatePlayheadPosition() {
 function playVideo(index) {
     if (index < 0 || index >= state.videos.length) return;
     
-    state.currentVideoIndex = index;
+    if (isTransitioning) return;
+    
     const video = state.videos[index];
     const url = getVideoUrl(index);
     
-    elements.videoPlayerA.pause();
-    elements.videoPlayerB.pause();
-    
-    currentPlayer = elements.videoPlayerA;
-    nextPlayer = elements.videoPlayerB;
-    nextPlayerReady = false;
-    
-    elements.videoPlayerA.style.opacity = '0';
-    elements.videoPlayerA.style.pointerEvents = 'none';
-    elements.videoPlayerB.style.opacity = '0';
-    elements.videoPlayerB.style.pointerEvents = 'none';
-    
-    currentPlayer.src = url;
-    currentPlayer.currentTime = 0;
-    currentPlayer.playbackRate = state.playbackSpeed;
-    currentPlayer.style.opacity = '1';
-    currentPlayer.style.pointerEvents = 'auto';
-    currentPlayer.play();
-    
-    updateVideoInfo(index);
-    
-    baseNeedsRedraw = true;
-    renderTimelineBase();
-    renderTimeline();
-    
-    preloadNextVideoDouble();
-    startPlayheadUpdate();
+    if (state.currentVideoIndex < 0) {
+        state.currentVideoIndex = index;
+        currentPlayer = elements.videoPlayerA;
+        nextPlayer = elements.videoPlayerB;
+        
+        elements.videoPlayerA.style.opacity = '0';
+        elements.videoPlayerA.style.pointerEvents = 'none';
+        elements.videoPlayerB.style.opacity = '0';
+        elements.videoPlayerB.style.pointerEvents = 'none';
+        
+        currentPlayer.src = url;
+        currentPlayer.currentTime = 0;
+        currentPlayer.playbackRate = state.playbackSpeed;
+        
+        const onLoadedData = () => {
+            currentPlayer.style.opacity = '1';
+            currentPlayer.style.pointerEvents = 'auto';
+            currentPlayer.play();
+            currentPlayer.removeEventListener('loadeddata', onLoadedData);
+        };
+        currentPlayer.addEventListener('loadeddata', onLoadedData);
+        
+        updateVideoInfo(index);
+        baseNeedsRedraw = true;
+        renderTimelineBase();
+        renderTimeline();
+        preloadNextVideoDouble();
+        startPlayheadUpdate();
+    } else {
+        isTransitioning = true;
+        state.currentVideoIndex = index;
+        
+        nextPlayerReady = false;
+        nextPlayer.src = url;
+        nextPlayer.currentTime = 0;
+        nextPlayer.playbackRate = state.playbackSpeed;
+        nextPlayer.load();
+        
+        const switchVideo = () => {
+            nextPlayer.style.opacity = '1';
+            nextPlayer.style.pointerEvents = 'auto';
+            nextPlayer.play();
+            
+            currentPlayer.style.opacity = '0';
+            currentPlayer.style.pointerEvents = 'none';
+            currentPlayer.pause();
+            
+            swapPlayers();
+            nextPlayerReady = false;
+            isTransitioning = false;
+            
+            updateVideoInfo(index);
+            
+            baseNeedsRedraw = true;
+            renderTimelineBase();
+            renderTimeline();
+            
+            preloadNextVideoDouble();
+        };
+        
+        if (nextPlayer.readyState >= 2) {
+            switchVideo();
+        } else {
+            const onLoadedData = () => {
+                nextPlayer.removeEventListener('loadeddata', onLoadedData);
+                if (isTransitioning) {
+                    switchVideo();
+                }
+            };
+            nextPlayer.addEventListener('loadeddata', onLoadedData);
+        }
+    }
 }
 
 function preloadNextVideoDouble() {

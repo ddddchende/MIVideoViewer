@@ -167,7 +167,7 @@ body.fullscreen-mode .video-wrapper {
     gap: 8px;
     opacity: 0;
     transition: opacity 0.3s;
-    z-index: 20;
+    z-index: 101;
 }
 
 .video-wrapper:hover .video-controls,
