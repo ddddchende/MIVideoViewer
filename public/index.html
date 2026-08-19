@@ -8,29 +8,76 @@
 </head>
 <body>
     <div class="container" id="container">
+        <div class="titlebar" id="titlebar">
+            <div class="titlebar-drag">
+                <span class="titlebar-title">小米摄像头录像查看器</span>
+            </div>
+            <div class="titlebar-controls">
+                <button type="button" class="titlebar-btn" id="winMinimize" aria-label="最小化">
+                    <svg viewBox="0 0 12 12" width="12" height="12"><path d="M2 6h8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+                </button>
+                <button type="button" class="titlebar-btn" id="winMaximize" aria-label="最大化/还原">
+                    <svg viewBox="0 0 12 12" width="12" height="12"><path d="M2.5 2.5h7v7h-7z" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
+                </button>
+                <button type="button" class="titlebar-btn titlebar-close" id="winClose" aria-label="关闭">
+                    <svg viewBox="0 0 12 12" width="12" height="12"><path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+                </button>
+            </div>
+        </div>
         <header id="header">
-            <h1>📹 小米摄像头录像查看器</h1>
-            <button id="settingsBtn" class="settings-btn" title="设置">
-                <svg viewBox="0 0 24 24" width="24" height="24">
-                    <path fill="currentColor" d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
-                </svg>
-            </button>
+            <div class="brand">
+                <div class="brand-logo">
+                    <svg viewBox="0 0 24 24" width="28" height="28">
+                        <path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" d="M3 7.5A1.5 1.5 0 0 1 4.5 6h15A1.5 1.5 0 0 1 21 7.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 16.5v-9Z"/>
+                        <circle cx="12" cy="12" r="3" fill="currentColor"/>
+                        <path d="M7 21h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                    </svg>
+                </div>
+                <div class="brand-text">
+                    <h1>小米摄像头录像查看器</h1>
+                    <span class="brand-sub">MI CAMERA RECORDER · 本地录像时间线</span>
+                </div>
+            </div>
+            <div class="header-actions">
+                <span class="status-pill"><span class="status-dot"></span>服务运行中</span>
+                <button id="settingsBtn" class="settings-btn" type="button" title="设置" aria-label="打开设置">
+                    <svg viewBox="0 0 24 24" width="20" height="20">
+                        <path fill="currentColor" d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
+                    </svg>
+                </button>
+            </div>
         </header>
         
         <div class="controls" id="controls">
             <div class="control-group">
                 <label>选择摄像头:</label>
-                <select id="cameraSelect">
-                    <option value="">-- 请选择 --</option>
-                </select>
+                <div class="custom-select" data-custom-select="cameraSelect">
+                    <button type="button" class="custom-select-trigger" aria-haspopup="listbox">
+                        <span class="custom-select-label">-- 请选择 --</span>
+                        <svg class="select-chevron" viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </button>
+                    <select id="cameraSelect" class="custom-select-native"></select>
+                    <div class="custom-select-menu" role="listbox"></div>
+                </div>
             </div>
             
             <div class="control-group">
                 <label>查看模式:</label>
-                <select id="viewMode">
-                    <option value="date">按日期查看</option>
-                    <option value="all" selected>全部时间线</option>
-                </select>
+                <div class="custom-select" data-custom-select="viewMode">
+                    <button type="button" class="custom-select-trigger" aria-haspopup="listbox">
+                        <span class="custom-select-label">全部时间线</span>
+                        <svg class="select-chevron" viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </button>
+                    <select id="viewMode" class="custom-select-native">
+                        <option value="date">按日期查看</option>
+                        <option value="all" selected>全部时间线</option>
+                    </select>
+                    <div class="custom-select-menu" role="listbox"></div>
+                </div>
             </div>
             
             <div class="control-group" id="dateGroup">
@@ -38,20 +85,21 @@
                 <input type="date" id="dateSelect">
             </div>
             
-            <div class="control-group">
+            <div class="control-group speed-group">
                 <label>播放速度:</label>
-                <select id="playbackSpeed">
-                    <option value="1" selected>1x</option>
-                    <option value="2">2x</option>
-                    <option value="4">4x</option>
-                    <option value="8">8x</option>
-                    <option value="16">16x</option>
-                </select>
-            </div>
-            
-            <div class="control-group">
-                <label>缩放:</label>
-                <span id="zoomLevel" class="zoom-level">1x</span>
+                <div class="speed-control">
+                    <div class="speed-slider-row">
+                        <input type="range" id="playbackSpeedSlider" class="speed-slider" min="1" max="16" step="0.5" value="1" aria-label="播放速度">
+                        <span id="playbackSpeedValue" class="speed-value">1x</span>
+                    </div>
+                    <div class="speed-presets" role="group" aria-label="快速播放速度">
+                        <button type="button" class="speed-preset active" data-speed="1">1x</button>
+                        <button type="button" class="speed-preset" data-speed="2">2x</button>
+                        <button type="button" class="speed-preset" data-speed="4">4x</button>
+                        <button type="button" class="speed-preset" data-speed="8">8x</button>
+                        <button type="button" class="speed-preset" data-speed="16">16x</button>
+                    </div>
+                </div>
             </div>
         </div>
         
@@ -66,12 +114,17 @@
                 <span id="currentVideoTime"></span>
             </div>
             <div class="video-wrapper" id="videoWrapper">
-                <video id="videoPlayerA" style="position:absolute;top:0;left:0;width:100%;height:100%;">
+                <video id="videoPlayerA" class="video-layer" preload="auto">
                     您的浏览器不支持视频播放
                 </video>
-                <video id="videoPlayerB" style="position:absolute;top:0;left:0;width:100%;height:100%;opacity:0;pointer-events:none;">
+                <video id="videoPlayerB" class="video-layer" preload="auto" style="opacity:0;pointer-events:none;">
                     您的浏览器不支持视频播放
                 </video>
+                
+                <div class="video-loading" id="videoLoading" style="display:none;">
+                    <div class="spinner"></div>
+                    <div class="loading-text">正在加载视频...</div>
+                </div>
                 
                 <div class="video-controls" id="videoControls">
                     <button id="playPauseBtn" class="control-btn" title="播放/暂停">
@@ -92,36 +145,94 @@
         </div>
         
         <div class="timeline-container" id="timelineContainer">
-            <h3>时间线 <span id="timelineDate"></span></h3>
+            <div class="timeline-header">
+                <div class="timeline-title-wrap">
+                    <h3>时间线 <span id="timelineDate"></span></h3>
+                    <span class="zoom-level-wrap">缩放 <span id="zoomLevel" class="zoom-level">1x</span></span>
+                </div>
+                <span class="timeline-hint">滚轮缩放 · 拖拽平移 · 单击播放</span>
+            </div>
             <div class="timeline" id="timeline">
                 <div class="timeline-placeholder">请选择摄像头</div>
                 <div class="timeline-cursor" id="timelineCursor"></div>
                 <div class="timeline-playhead" id="timelinePlayhead"></div>
             </div>
             <div class="time-labels" id="timeLabels"></div>
-            <input type="range" id="timelineScroll" class="timeline-scroll" min="0" max="100" value="50">
         </div>
     </div>
     
     <div class="settings-modal-overlay" id="settingsModal">
-        <div class="settings-modal">
+        <div class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
             <div class="settings-modal-header">
-                <h2>设置</h2>
-                <button class="settings-modal-close" id="settingsModalClose">&times;</button>
+                <div class="settings-title-wrap">
+                    <span class="settings-title-icon">
+                        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                            <path fill="currentColor" d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.61l-1.92-3.32a.5.5 0 0 0-.59-.22l-2.39.96a7.4 7.4 0 0 0-1.62-.94l-.36-2.54a.5.5 0 0 0-.48-.41h-3.84a.5.5 0 0 0-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.5.5 0 0 0-.59.22L2.74 8.87a.5.5 0 0 0 .12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58a.5.5 0 0 0-.12.61l1.92 3.32a.5.5 0 0 0 .59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54a.5.5 0 0 0 .47.41h3.84a.5.5 0 0 0 .48-.41l.36-2.54a7.4 7.4 0 0 0 1.62-.94l2.39.96a.5.5 0 0 0 .59-.22l1.92-3.32a.5.5 0 0 0-.12-.61l-2.01-1.58ZM12 15.6a3.6 3.6 0 1 1 0-7.2 3.6 3.6 0 0 1 0 7.2Z"/>
+                        </svg>
+                    </span>
+                    <div>
+                        <h2 id="settingsTitle">设置</h2>
+                        <span>管理录像库连接</span>
+                    </div>
+                </div>
+                <button class="settings-modal-close" id="settingsModalClose" type="button" aria-label="关闭设置">&times;</button>
             </div>
             <div class="settings-modal-body">
                 <div class="setting-item">
-                    <label for="videoBasePath">视频目录路径:</label>
+                    <div class="setting-card-head">
+                        <span class="setting-card-icon">
+                            <svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true">
+                                <path fill="currentColor" d="M3 6.5A2.5 2.5 0 0 1 5.5 4h4l2 2H18.5A2.5 2.5 0 0 1 21 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5v-11Z"/>
+                                <path fill="currentColor" d="M5 9h14v8.5a.5.5 0 0 1-.5.5h-13a.5.5 0 0 1-.5-.5V9Z" opacity=".42"/>
+                            </svg>
+                        </span>
+                        <div class="setting-card-copy">
+                            <label for="videoBasePath">视频目录</label>
+                            <span>选择包含摄像头录像的本地文件夹</span>
+                        </div>
+                    </div>
                     <input type="text" id="videoBasePath" placeholder="例如: X:\xiaomi_camera_videos">
-                    <p class="setting-hint">修改后需要重启服务器</p>
+                    <p class="setting-hint">保存后需要重启服务器才能生效</p>
+                </div>
+
+                <div class="setting-item">
+                    <div class="setting-card-head">
+                        <span class="setting-card-icon">
+                            <svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true">
+                                <rect x="4" y="4" width="16" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/>
+                                <path d="M8 20h8M12 16v4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+                            </svg>
+                        </span>
+                        <div class="setting-card-copy">
+                            <label>预览框大小</label>
+                            <span>调整时间线悬停时的缩略图尺寸</span>
+                        </div>
+                    </div>
+                    <div class="segmented" id="previewSizeGroup">
+                        <label class="segment">
+                            <input type="radio" name="previewSize" value="small">
+                            <span>小</span>
+                        </label>
+                        <label class="segment">
+                            <input type="radio" name="previewSize" value="medium" checked>
+                            <span>中</span>
+                        </label>
+                        <label class="segment">
+                            <input type="radio" name="previewSize" value="large">
+                            <span>大</span>
+                        </label>
+                    </div>
+                    <p class="setting-hint">保存后即时生效，无需重启</p>
                 </div>
             </div>
             <div class="settings-modal-footer">
-                <button class="settings-btn-cancel" id="settingsCancel">取消</button>
-                <button class="settings-btn-save" id="settingsSave">保存</button>
+                <button class="settings-btn-cancel" id="settingsCancel" type="button">取消</button>
+                <button class="settings-btn-save" id="settingsSave" type="button">保存设置</button>
             </div>
         </div>
     </div>
+    
+    <div class="toast-container" id="toastContainer"></div>
     
     <script src="app.js"></script>
 </body>

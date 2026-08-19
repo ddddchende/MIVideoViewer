@@ -2,12 +2,49 @@
   "name": "mi-video-viewer",
   "version": "1.0.0",
   "description": "小米摄像头录像查看器",
-  "main": "server.js",
+  "main": "electron-main.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "electron": "electron .",
+    "build:win": "electron-builder --win"
   },
   "dependencies": {
     "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "electron": "^37.2.6",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.mivideoviewer.app",
+    "productName": "MI Video Viewer",
+    "asar": true,
+    "afterPack": "build/afterPack.js",
+    "files": [
+      "electron-main.js",
+      "preload.js",
+      "server.js",
+      "public/**/*",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "directories": {
+      "buildResources": "build"
+    },
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        "portable",
+        "zip"
+      ],
+      "artifactName": "MI-Video-Viewer-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "MI-Video-Viewer-Portable-${version}.${ext}"
+    },
+    "nsis": {
+      "differentialPackage": false
+    }
   }
 }
