@@ -73,9 +73,12 @@ let previewVideoB = null;
 let placeholder = null;
 let lastHoverIndex = -1;
 let lastPreviewIndex = -1;
+let cachedSegments = null;
+let lastLabelsKey = '';
 let baseNeedsRedraw = true;
 let playheadUpdateInterval = null;
 let fullscreenHideTimeout = null;
+let videoControls = null;
 let lastClickTime = 0;
 let settingsTrigger = null;
 
@@ -358,8 +361,12 @@ function setupFullscreen() {
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
 
+    videoControls = document.querySelector('.video-controls');
+
     elements.videoWrapper.addEventListener('mousemove', handleFullscreenMouseMove);
     elements.timelineContainer.addEventListener('mousemove', handleFullscreenMouseMove);
+    // 全屏时在文档层面监听，确保鼠标移到时间线之外的任意位置也会触发隐藏
+    document.addEventListener('mousemove', handleFullscreenMouseMove);
 }
 
 function setupDoubleClick() {
@@ -371,10 +378,14 @@ function handleFullscreenChange() {
     if (isNowFullscreen !== state.isFullscreen) {
         state.isFullscreen = isNowFullscreen;
         document.body.classList.toggle('fullscreen-mode', isNowFullscreen);
-        if (!isNowFullscreen) {
+        if (isNowFullscreen) {
+            handleFullscreenMouseMove();
+        } else {
             clearTimeout(fullscreenHideTimeout);
+            document.body.classList.remove('fullscreen-cursor-hidden');
             document.body.classList.remove('timeline-shown');
             elements.timelineContainer.classList.remove('visible');
+            if (videoControls) videoControls.classList.remove('controls-shown');
         }
 
         setTimeout(() => {
@@ -390,19 +401,26 @@ function handleFullscreenMouseMove(e) {
     if (!state.isFullscreen) return;
 
     clearTimeout(fullscreenHideTimeout);
+    document.body.classList.remove('fullscreen-cursor-hidden');
 
+    // 移动即显示视频控制按钮；落入底部触发区时同时显示时间线
+    if (videoControls) videoControls.classList.add('controls-shown');
     const windowHeight = window.innerHeight;
-    const mouseY = e.clientY;
-
-    if (mouseY > windowHeight - 150) {
+    if (e && e.clientY > windowHeight - 150) {
         elements.timelineContainer.classList.add('visible');
         document.body.classList.add('timeline-shown');
     } else {
-        fullscreenHideTimeout = setTimeout(() => {
-            elements.timelineContainer.classList.remove('visible');
-            document.body.classList.remove('timeline-shown');
-        }, 500);
+        elements.timelineContainer.classList.remove('visible');
+        document.body.classList.remove('timeline-shown');
     }
+
+    // 鼠标静止一段时间后自动隐藏视频按钮与时间线
+    fullscreenHideTimeout = setTimeout(() => {
+        if (videoControls) videoControls.classList.remove('controls-shown');
+        elements.timelineContainer.classList.remove('visible');
+        document.body.classList.remove('timeline-shown');
+        document.body.classList.add('fullscreen-cursor-hidden');
+    }, 2500);
 }
 
 function toggleFullscreen() {
@@ -468,12 +486,16 @@ function updatePlayheadPosition() {
     if (!dragging && state.isPlaying && displayTotalMs < totalMs) {
         const followEdge = displayEndMs - displayTotalMs * 0.15;
         if (currentTimeMs > followEdge) {
-            state.scrollPosition = Math.max(0, Math.min(1,
-                (currentTimeMs - startTime.getTime() + displayTotalMs * 0.15) / totalMs));
-            baseNeedsRedraw = true;
-            renderTimelineBase();
-            renderTimeline();
-            return updatePlayheadPosition();
+            const newScroll = (currentTimeMs - startTime.getTime() + displayTotalMs * 0.15) / totalMs;
+            // 仅在视口确实推进时重绘；推进后本次更新结束，交由 setInterval 驱动下一次。
+            // 原实现通过 return updatePlayheadPosition() 递归调用，放大状态下可能无限递归导致卡死。
+            if (newScroll > state.scrollPosition) {
+                state.scrollPosition = Math.max(0, Math.min(1, newScroll));
+                baseNeedsRedraw = true;
+                renderTimelineBase();
+                renderTimeline();
+            }
+            return;
         }
     }
 
@@ -528,7 +550,7 @@ function handleTimelineWheel(e) {
 }
 
 function updateZoomDisplay() {
-    elements.zoomLevel.textContent = `${Math.round(state.zoomLevel)}x`;
+    elements.zoomLevel.textContent = `缩放 ${Math.round(state.zoomLevel)}x`;
 }
 
 function handleTimelineMouseDown(e) {
@@ -683,9 +705,6 @@ function applyHoverUpdate() {
         if (lastRenderHoverIndex >= 0) {
             hidePreview();
             state.timelineHoverIndex = -1;
-            baseNeedsRedraw = true;
-            renderTimelineBase();
-            renderTimeline();
         }
         return;
     }
@@ -693,13 +712,10 @@ function applyHoverUpdate() {
     // 预览窗口每帧跟随鼠标平滑移动（不涉及网络）
     positionPreview(x, hoverTime);
 
-    // 仅在悬停目标视频变化时重绘时间线
+    // 更新悬停目标索引（供预览加载使用）
     if (index !== lastRenderHoverIndex) {
         lastRenderHoverIndex = index;
         state.timelineHoverIndex = index;
-        baseNeedsRedraw = true;
-        renderTimelineBase();
-        renderTimeline();
     }
 
     // 鼠标停留稳定后才加载静帧；目标仍变化则重置等待
@@ -848,6 +864,13 @@ function mergeContiguousVideos() {
     return segments;
 }
 
+function getCachedSegments() {
+    if (cachedSegments === null) {
+        cachedSegments = mergeContiguousVideos();
+    }
+    return cachedSegments;
+}
+
 function renderTimelineBase() {
     if (!offscreenCtx || !offscreenCanvas || !baseNeedsRedraw) return;
     baseNeedsRedraw = false;
@@ -904,27 +927,26 @@ function renderTimelineBase() {
     const segmentHeight = 24;
     const segmentY = (height - segmentHeight) / 2;
 
-    timelineData = { startTime, endTime, totalMs, displayStartMs, displayEndMs, padding: TIMELINE_PADDING, timelineWidth };
-
-    drawTicks(width, height, TIMELINE_PADDING, timelineWidth, displayStartMs, displayEndMs);
-
-    const segments = mergeContiguousVideos();
-    const activeColor = '#ff9f0a';
-    const hoverColor = '#64b5ff';
-    const GAP = 6;
-
     // 以第一个录像所在的当天 00:00 为基准，用于按天切分着色
     const firstDay = new Date(state.videos[0].startTime);
     firstDay.setHours(0, 0, 0, 0);
     const dayBase = firstDay.getTime();
+    const GAP = 6;
 
+    timelineData = {
+        startTime, endTime, totalMs, displayStartMs, displayEndMs,
+        padding: TIMELINE_PADDING, timelineWidth,
+        segmentY, segmentHeight, dayBase, GAP
+    };
+
+    drawTicks(width, height, TIMELINE_PADDING, timelineWidth, displayStartMs, displayEndMs);
+
+    const segments = getCachedSegments();
     const displayTotalMs = displayEndMs - displayStartMs;
 
+    // base 层画按天配色的录像段；鼠标悬停高亮已移除，仅保留白色光标线
     segments.forEach(segment => {
         if (segment.endTimeTs < displayStartMs || segment.startTimeTs > displayEndMs) return;
-
-        const isActive = state.currentVideoIndex >= segment.startIndex && state.currentVideoIndex <= segment.endIndex;
-        const isHover = state.timelineHoverIndex >= segment.startIndex && state.timelineHoverIndex <= segment.endIndex;
 
         // 按"天"把段切成子块，每天一种颜色（30 天连续录像的段也要逐天变色）
         const sliceStart = Math.max(segment.startTimeTs, displayStartMs);
@@ -936,21 +958,12 @@ function renderTimelineBase() {
             const nextDayStart = dayBase + (dayIndex + 1) * 86400000;
             const subEnd = Math.min(sliceEnd, nextDayStart);
 
-            let color;
-            if (isActive) {
-                color = activeColor;
-            } else if (isHover) {
-                color = hoverColor;
-            } else {
-                color = getDayColor(dayIndex);
-            }
-
             const leftPercent = (cursor - displayStartMs) / displayTotalMs;
             const widthPercent = (subEnd - cursor) / displayTotalMs;
             const x1 = TIMELINE_PADDING + leftPercent * timelineWidth + GAP / 2;
             const x2 = TIMELINE_PADDING + (leftPercent + widthPercent) * timelineWidth - GAP / 2;
 
-            offscreenCtx.fillStyle = color;
+            offscreenCtx.fillStyle = getDayColor(dayIndex);
             offscreenCtx.fillRect(x1, segmentY, Math.max(x2 - x1, 2), segmentHeight);
 
             cursor = subEnd;
@@ -1010,7 +1023,13 @@ function renderTimeline() {
     ctx.drawImage(offscreenCanvas, 0, 0, rect.width, rect.height);
 }
 
+// 叠加层已移除：悬停/播放高亮不再绘制，仅保留白色鼠标光标。
+
 function renderTimeLabels(startMs, endMs) {
+    const targetKey = `${Math.round(startMs)}:${Math.round(endMs)}:${Math.round((timelineData?.timelineWidth || 0))}`;
+    if (targetKey === lastLabelsKey) return;
+    lastLabelsKey = targetKey;
+
     const startTime = new Date(startMs);
     const endTime = new Date(endMs);
     const totalMs = endMs - startMs;
@@ -1162,6 +1181,7 @@ async function fetchVideos() {
         lastHoverIndex = -1;
         lastRenderHoverIndex = -1;
 
+        cachedSegments = null;
         updateStats();
         baseNeedsRedraw = true;
         renderTimelineBase();
@@ -1170,6 +1190,7 @@ async function fetchVideos() {
         console.error('获取视频列表失败:', err);
         showToast('获取视频列表失败，请检查服务端配置', 'error');
         state.videos = [];
+        cachedSegments = null;
         updateStats();
     } finally {
         state.loadingVideos = false;
@@ -1337,6 +1358,7 @@ elements.cameraSelect.addEventListener('change', async (e) => {
         fetchVideos();
     } else {
         state.videos = [];
+        cachedSegments = null;
         stopPlayheadUpdate();
         resetPlayers();
         if (placeholder) {
@@ -1551,3 +1573,20 @@ function initWindowControls() {
 
 initWindowControls();
 
+/* ===================== 缩放重置按钮 ===================== */
+
+function initZoomReset() {
+    const btn = document.getElementById('zoomResetBtn');
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+        state.zoomLevel = 1;
+        state.scrollPosition = 0.5;
+        updateZoomDisplay();
+        baseNeedsRedraw = true;
+        renderTimelineBase();
+        renderTimeline();
+        updatePlayheadPosition();
+    });
+}
+
+initZoomReset();

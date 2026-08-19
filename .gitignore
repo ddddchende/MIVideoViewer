@@ -3,3 +3,4 @@ node_modules/
 dist/
 .trae/
 node_modules/
+build-log.txt

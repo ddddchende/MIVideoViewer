@@ -61,6 +61,11 @@ body.fullscreen-mode {
     overflow: hidden;
 }
 
+body.fullscreen-mode.fullscreen-cursor-hidden,
+body.fullscreen-mode.fullscreen-cursor-hidden * {
+    cursor: none !important;
+}
+
 /* ===================== 滚动条 ===================== */
 
 ::-webkit-scrollbar {
@@ -646,16 +651,6 @@ header {
     letter-spacing: 0.3px;
 }
 
-.zoom-level {
-    min-width: 34px;
-    text-align: center;
-    color: var(--accent);
-    font-weight: 600;
-    font-size: 13px;
-    font-family: var(--mono);
-    letter-spacing: 0.5px;
-}
-
 /* ===================== 统计信息条 ===================== */
 
 .stats {
@@ -827,9 +822,14 @@ body.fullscreen-mode .video-wrapper {
 }
 
 .video-wrapper:hover .video-controls,
-body.fullscreen-mode .video-controls {
+body.fullscreen-mode .video-controls.controls-shown {
     opacity: 1;
     transform: translateY(0);
+}
+
+/* 全屏下按钮显隐完全由 controls-shown 控制，忽略 hover 以免静止时无法隐藏 */
+body.fullscreen-mode .video-wrapper:hover .video-controls:not(.controls-shown) {
+    opacity: 0;
 }
 
 .video-controls button {
@@ -894,12 +894,31 @@ body.fullscreen-mode .timeline-container {
     padding: 12px 26px 16px;
     transform: translateY(100%);
     transition: transform 0.3s ease;
+    animation: none;
     z-index: 100;
     box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.55);
 }
 
 body.fullscreen-mode .timeline-container.visible {
     transform: translateY(0);
+}
+
+/* 全屏下压缩时间线整体高度，视觉更沉浸 */
+body.fullscreen-mode .timeline-container {
+    padding: 8px 18px 10px;
+}
+
+body.fullscreen-mode .timeline-header {
+    margin-bottom: 6px;
+}
+
+body.fullscreen-mode .timeline {
+    height: 40px;
+}
+
+body.fullscreen-mode .time-labels {
+    height: 14px;
+    margin-top: 5px;
 }
 
 .timeline-header {
@@ -916,23 +935,64 @@ body.fullscreen-mode .timeline-container.visible {
 }
 
 .zoom-level-wrap {
+    position: relative;
+    min-width: 66px;
+    height: 23px;
     display: inline-flex;
     align-items: center;
-    gap: 5px;
-    padding: 3px 8px;
+    justify-content: center;
+    padding: 3px 10px;
     border: 1px solid rgba(10, 132, 255, 0.24);
     border-radius: 7px;
     background: rgba(10, 132, 255, 0.08);
     color: var(--text-mute);
     font: 10px var(--disp);
     letter-spacing: 0.8px;
+    cursor: pointer;
+    overflow: hidden;
     transition: background 0.25s var(--ease), border-color 0.25s, transform 0.25s var(--ease-spring);
+}
+
+.zoom-label,
+.zoom-reset-label {
+    transition: opacity 0.2s var(--ease), transform 0.2s var(--ease);
+    white-space: nowrap;
+}
+
+.zoom-level-wrap .zoom-label {
+    color: var(--accent);
+    font-family: var(--mono);
+    font-weight: 600;
+    font-size: 10px;
+    letter-spacing: 0.5px;
+}
+
+.zoom-level-wrap .zoom-reset-label {
+    position: absolute;
+    opacity: 0;
+    transform: translateY(10px);
+    color: #fff;
+    font-weight: 600;
 }
 
 .timeline-container:hover .zoom-level-wrap {
     border-color: rgba(10, 132, 255, 0.45);
     background: rgba(10, 132, 255, 0.14);
     transform: translateY(-1px);
+}
+
+.zoom-level-wrap:hover .zoom-label {
+    opacity: 0;
+    transform: translateY(-10px);
+}
+
+.zoom-level-wrap:hover .zoom-reset-label {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.zoom-level-wrap:active {
+    transform: scale(0.92);
 }
 
 .timeline-header h3 {
@@ -975,16 +1035,34 @@ body.fullscreen-mode .timeline-hint {
     box-shadow: inset 0 2px 16px rgba(0, 0, 0, 0.55);
 }
 
-/* 光标 */
+/* 鼠标光标（准星式发丝线） */
 .timeline-cursor {
     position: absolute;
     top: 0;
-    width: 1px;
+    width: 2px;
     height: 100%;
-    background: rgba(255, 255, 255, 0.9);
+    background: linear-gradient(180deg,
+        rgba(255, 255, 255, 0.98) 0%,
+        rgba(255, 255, 255, 0.6) 55%,
+        rgba(255, 255, 255, 0.12) 100%);
+    border-radius: 2px;
+    box-shadow: 0 0 6px rgba(10, 132, 255, 0.55);
     pointer-events: none;
     display: none;
     z-index: 10;
+}
+
+.timeline-cursor::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 8px rgba(10, 132, 255, 0.85);
 }
 
 /* 播放头（琥珀色） */
@@ -1559,9 +1637,16 @@ body.fullscreen-mode .timeline-hint {
     box-shadow: 0 28px 60px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-body.fullscreen-mode .video-container:hover,
-body.fullscreen-mode .timeline-container:hover {
+body.fullscreen-mode .video-container:hover {
     transform: none;
+}
+
+body.fullscreen-mode .timeline-container:hover {
+    transform: translateY(100%);
+}
+
+body.fullscreen-mode .timeline-container.visible:hover {
+    transform: translateY(0);
 }
 
 /* 控制项微互动 */
@@ -1573,15 +1658,6 @@ body.fullscreen-mode .timeline-container:hover {
 .control-group .custom-select-trigger:hover,
 .control-group input:hover {
     transform: translateY(-1px);
-}
-
-.zoom-level {
-    transition: color 0.25s, transform 0.25s var(--ease);
-    display: inline-block;
-}
-
-.timeline-container:hover .zoom-level {
-    transform: scale(1.08);
 }
 
 /* 播放头平滑移动 */
