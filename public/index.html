@@ -39,7 +39,6 @@
                 </div>
             </div>
             <div class="header-actions">
-                <span class="status-pill"><span class="status-dot"></span>服务运行中</span>
                 <button id="settingsBtn" class="settings-btn" type="button" title="设置" aria-label="打开设置">
                     <svg viewBox="0 0 24 24" width="20" height="20">
                         <path fill="currentColor" d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
@@ -89,35 +88,25 @@
                 <label>播放速度:</label>
                 <div class="speed-control">
                     <div class="speed-slider-row">
-                        <input type="range" id="playbackSpeedSlider" class="speed-slider" min="1" max="16" step="0.5" value="1" aria-label="播放速度">
+                        <input type="range" id="playbackSpeedSlider" class="speed-slider" min="0" max="9" step="1" value="0" aria-label="播放速度">
                         <span id="playbackSpeedValue" class="speed-value">1x</span>
-                    </div>
-                    <div class="speed-presets" role="group" aria-label="快速播放速度">
-                        <button type="button" class="speed-preset active" data-speed="1">1x</button>
-                        <button type="button" class="speed-preset" data-speed="2">2x</button>
-                        <button type="button" class="speed-preset" data-speed="4">4x</button>
-                        <button type="button" class="speed-preset" data-speed="8">8x</button>
-                        <button type="button" class="speed-preset" data-speed="16">16x</button>
+                        <button type="button" id="speedResetBtn" class="speed-reset" title="重置为 1x">重置</button>
                     </div>
                 </div>
             </div>
-        </div>
-        
-        <div class="stats" id="stats">
-            <span id="videoCount">共 0 个视频</span>
-            <span id="totalDuration">总时长: 0 分钟</span>
-        </div>
-        
-        <div class="video-container" id="videoContainer">
-            <div class="video-info" id="videoInfo">
-                <span id="currentVideoName">未选择视频</span>
-                <span id="currentVideoTime"></span>
+
+            <div class="control-group stats-group" id="stats">
+                <span id="videoCount">共 0 个视频</span>
+                <span id="totalDuration">总时长: 0 分钟</span>
             </div>
+        </div>
+
+        <div class="video-container" id="videoContainer">
             <div class="video-wrapper" id="videoWrapper">
-                <video id="videoPlayerA" class="video-layer" preload="auto">
+                <video id="videoPlayerA" class="video-layer" preload="metadata">
                     您的浏览器不支持视频播放
                 </video>
-                <video id="videoPlayerB" class="video-layer" preload="auto" style="opacity:0;pointer-events:none;">
+                <video id="videoPlayerB" class="video-layer" preload="metadata" style="opacity:0;pointer-events:none;">
                     您的浏览器不支持视频播放
                 </video>
                 
@@ -135,11 +124,18 @@
                             <path fill="currentColor" d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
                         </svg>
                     </button>
-                    <button id="fullscreenBtn" class="control-btn" title="全屏">
-                        <svg viewBox="0 0 24 24" width="24" height="24">
-                            <path fill="currentColor" d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
-                        </svg>
-                    </button>
+                    <div class="video-controls-right">
+                        <div class="fs-speed-control" title="播放速度">
+                            <input type="range" id="fsPlaybackSpeedSlider" class="speed-slider fs-speed-slider" min="0" max="9" step="1" value="0" aria-label="播放速度（全屏）">
+                            <span id="fsPlaybackSpeedValue" class="speed-value">1x</span>
+                            <button type="button" id="fsSpeedResetBtn" class="speed-reset" title="重置为 1x">重置</button>
+                        </div>
+                        <button id="fullscreenBtn" class="control-btn" title="全屏">
+                            <svg viewBox="0 0 24 24" width="24" height="24">
+                                <path fill="currentColor" d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+                            </svg>
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -148,9 +144,17 @@
             <div class="timeline-header">
                 <div class="timeline-title-wrap">
                     <h3>时间线 <span id="timelineDate"></span></h3>
+                </div>
+                <div class="timeline-controls-center">
                     <button type="button" class="zoom-level-wrap" id="zoomResetBtn" title="重置" aria-label="重置缩放">
                         <span class="zoom-label" id="zoomLevel">缩放 1x</span>
                         <span class="zoom-reset-label">重置</span>
+                    </button>
+                    <button type="button" class="follow-toggle" id="followToggleBtn" title="视口跳转到当前播放位置" aria-label="定位到播放头">
+                        <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
+                            <path fill="currentColor" d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm10 5h-2.1a8 8 0 0 1-6.9 6.9V22h-2v-2.1A8 8 0 0 1 4.1 13H2v-2h2.1A8 8 0 0 1 11 4.1V2h2v2.1A8 8 0 0 1 19.9 11H22v2z"/>
+                        </svg>
+                        <span class="follow-label" id="followLabel">定位播放头</span>
                     </button>
                 </div>
                 <span class="timeline-hint">滚轮缩放 · 拖拽平移 · 单击播放</span>
@@ -195,7 +199,7 @@
                         </div>
                     </div>
                     <input type="text" id="videoBasePath" placeholder="例如: X:\xiaomi_camera_videos">
-                    <p class="setting-hint">保存后需要重启服务器才能生效</p>
+                    <p class="setting-hint">保存后立即生效，自动重新加载视频列表</p>
                 </div>
 
                 <div class="setting-item">
@@ -225,7 +229,7 @@
                             <span>大</span>
                         </label>
                     </div>
-                    <p class="setting-hint">保存后即时生效，无需重启</p>
+                    <p class="setting-hint">保存后立即生效</p>
                 </div>
             </div>
             <div class="settings-modal-footer">

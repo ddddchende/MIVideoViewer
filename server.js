@@ -1,6 +1,7 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
+const fsp = fs.promises;
 
 const app = express();
 
@@ -26,7 +27,12 @@ function loadConfig() {
 
 const config = loadConfig();
 const PORT = Number(config.port) || DEFAULT_CONFIG.port;
-const VIDEO_BASE_PATH = config.videoBasePath || DEFAULT_CONFIG.videoBasePath;
+
+// 视频目录改为热更新：配置保存后立即生效（无需重启进程）。
+// 读取函数每次返回当前值，POST /api/config 成功时更新 config 并失效目录扫描缓存
+function getVideoBasePath() {
+    return config.videoBasePath || DEFAULT_CONFIG.videoBasePath;
+}
 
 // ---------- 工具函数 ----------
 
@@ -56,25 +62,45 @@ function parseFolderName(folderName) {
 
 /**
  * 扫描某摄像头目录下的所有视频（可带日期前缀过滤）。
+ * 异步实现 + 按"小时目录"的 mtime 缓存：目录内容未变（新增/删除文件会改变目录 mtime）
+ * 时直接复用上次解析结果，重复切换摄像头时不再重扫全部文件。
  * 对损坏/异常的子目录做容错，避免单个坏目录导致整体失败。
  */
-function collectVideos(cameraPath, datePrefix = null) {
-    const videos = [];
-    const folders = fs.readdirSync(cameraPath);
+// 缓存键为目录绝对路径，值为 { mtimeMs, videos }
+const folderScanCache = new Map();
 
-    for (const folder of folders) {
+async function collectVideos(cameraPath, datePrefix = null) {
+    const folderNames = await fsp.readdir(cameraPath);
+
+    const tasks = folderNames.map(async (folder) => {
         const parsed = parseFolderName(folder);
-        if (!parsed) continue;
-        if (datePrefix && !folder.startsWith(datePrefix)) continue;
+        if (!parsed) return null;
+        if (datePrefix && !folder.startsWith(datePrefix)) return null;
+
+        const folderPath = path.join(cameraPath, folder);
+
+        let stat;
+        try {
+            stat = await fsp.stat(folderPath);
+        } catch {
+            return null;
+        }
+
+        // 目录 mtime 未变：复用缓存，跳过 readdir + 解析
+        const cached = folderScanCache.get(folderPath);
+        if (cached && cached.mtimeMs === stat.mtimeMs) {
+            return cached.videos;
+        }
 
         let files = [];
         try {
-            files = fs.readdirSync(path.join(cameraPath, folder));
+            files = await fsp.readdir(folderPath);
         } catch (err) {
             console.warn(`跳过无法读取的目录: ${folder}`, err.message);
-            continue;
+            return null;
         }
 
+        const videos = [];
         for (const file of files) {
             if (!/\.mp4$/i.test(file)) continue;
             const info = parseVideoFilename(file);
@@ -95,6 +121,15 @@ function collectVideos(cameraPath, datePrefix = null) {
                 timestamp: info.timestamp
             });
         }
+
+        folderScanCache.set(folderPath, { mtimeMs: stat.mtimeMs, videos });
+        return videos;
+    });
+
+    const results = await Promise.all(tasks);
+    const videos = [];
+    for (const result of results) {
+        if (result) videos.push(...result);
     }
 
     videos.sort((a, b) => a.startTime.localeCompare(b.startTime));
@@ -104,7 +139,7 @@ function collectVideos(cameraPath, datePrefix = null) {
 function safeCameraPath(camera) {
     // 防止路径穿越
     const safe = path.basename(camera);
-    return path.join(VIDEO_BASE_PATH, safe);
+    return path.join(getVideoBasePath(), safe);
 }
 
 // ---------- API 路由 ----------
@@ -113,18 +148,19 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
 app.get('/api/cameras', (req, res) => {
+    const videoBasePath = getVideoBasePath();
     try {
-        const cameras = fs.readdirSync(VIDEO_BASE_PATH)
+        const cameras = fs.readdirSync(videoBasePath)
             .filter(name => {
                 try {
-                    return fs.statSync(path.join(VIDEO_BASE_PATH, name)).isDirectory();
+                    return fs.statSync(path.join(videoBasePath, name)).isDirectory();
                 } catch {
                     return false;
                 }
             });
         res.json({ cameras });
     } catch (err) {
-        res.status(500).json({ error: `无法读取视频目录: ${VIDEO_BASE_PATH}` });
+        res.status(500).json({ error: `无法读取视频目录: ${videoBasePath}` });
     }
 });
 
@@ -149,7 +185,7 @@ app.get('/api/dates/:camera', (req, res) => {
     }
 });
 
-app.get('/api/videos/:camera/:date', (req, res) => {
+app.get('/api/videos/:camera/:date', async (req, res) => {
     const { camera, date } = req.params;
     const [year, month, day] = date.split('-');
     if (!year || !month || !day) {
@@ -157,17 +193,17 @@ app.get('/api/videos/:camera/:date', (req, res) => {
     }
     const cameraPath = safeCameraPath(camera);
     try {
-        const videos = collectVideos(cameraPath, `${year}${month}${day}`);
+        const videos = await collectVideos(cameraPath, `${year}${month}${day}`);
         res.json({ videos });
     } catch (err) {
         res.status(404).json({ error: `摄像头目录不存在或不可读: ${camera}` });
     }
 });
 
-app.get('/api/all-videos/:camera', (req, res) => {
+app.get('/api/all-videos/:camera', async (req, res) => {
     const cameraPath = safeCameraPath(req.params.camera);
     try {
-        const videos = collectVideos(cameraPath);
+        const videos = await collectVideos(cameraPath);
         res.json({ videos });
     } catch (err) {
         res.status(404).json({ error: `摄像头目录不存在或不可读: ${req.params.camera}` });
@@ -215,6 +251,23 @@ app.get('/video/:camera/:folder/:filename', (req, res) => {
         'Cache-Control': 'public, max-age=3600'
     };
 
+    /**
+     * 流式响应：客户端中止（快速 seek 触发大量 Range 请求）或读取出错时
+     * 必须销毁 ReadStream，否则文件句柄堆积触发 EMFILE、未处理的 error 事件会崩溃进程
+     */
+    function sendFileRange(start, end) {
+        const stream = fs.createReadStream(videoPath, { start, end });
+        stream.on('error', () => {
+            // 读取失败（网络盘抖动/句柄耗尽）：销毁响应，不让错误冒泡成进程崩溃
+            if (!res.writableEnded) res.destroy();
+        });
+        res.on('close', () => {
+            // 正常结束（流已销毁）或客户端中止（立即释放文件句柄）
+            if (!stream.destroyed) stream.destroy();
+        });
+        stream.pipe(res);
+    }
+
     if (range) {
         const parts = range.replace(/bytes=/, '').split('-');
         const start = parseInt(parts[0], 10);
@@ -229,10 +282,10 @@ app.get('/video/:camera/:folder/:filename', (req, res) => {
             'Content-Range': `bytes ${start}-${end}/${fileSize}`,
             'Content-Length': end - start + 1
         });
-        fs.createReadStream(videoPath, { start, end }).pipe(res);
+        sendFileRange(start, end);
     } else {
         res.writeHead(200, { ...headers, 'Content-Length': fileSize });
-        fs.createReadStream(videoPath).pipe(res);
+        sendFileRange(0, fileSize - 1);
     }
 });
 
@@ -267,6 +320,9 @@ app.post('/api/config', (req, res) => {
     try {
         fs.mkdirSync(DATA_DIR, { recursive: true });
         fs.writeFileSync(CONFIG_PATH, JSON.stringify(newConfig, null, 2), 'utf8');
+        // 热更新：内存配置与目录扫描缓存立即生效，无需重启进程
+        config.videoBasePath = newConfig.videoBasePath;
+        folderScanCache.clear();
         res.json({ success: true, config: newConfig });
     } catch (err) {
         res.status(500).json({ error: `保存配置失败: ${err.message}` });
@@ -287,15 +343,16 @@ app.use((err, req, res, next) => {
 // ---------- 启动 ----------
 
 function startServer(onReady) {
-    if (!fs.existsSync(VIDEO_BASE_PATH)) {
-        console.warn(`⚠ 警告: 视频目录不存在: ${VIDEO_BASE_PATH}`);
-        console.warn(`  请修改 config.json 中的 videoBasePath 配置。`);
+    const videoBasePath = getVideoBasePath();
+    if (!fs.existsSync(videoBasePath)) {
+        console.warn(`⚠ 警告: 视频目录不存在: ${videoBasePath}`);
+        console.warn(`  请在设置中修改视频目录（保存后立即生效，无需重启）。`);
     }
 
     return app.listen(PORT, () => {
         console.log('========================================');
         console.log(`  服务器运行在: http://localhost:${PORT}`);
-        console.log(`  视频目录:   ${VIDEO_BASE_PATH}`);
+        console.log(`  视频目录:   ${getVideoBasePath()}（设置中修改即时生效）`);
         console.log('========================================');
         if (onReady) onReady();
     });

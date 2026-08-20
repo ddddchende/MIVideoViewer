@@ -93,7 +93,7 @@ body.fullscreen-mode.fullscreen-cursor-hidden * {
     max-width: 100%;
     height: 100vh;
     margin: 0 auto;
-    padding: var(--tbar-pad-y) var(--tbar-pad-x) calc(16px + var(--tbar-pad-y));
+    padding: var(--tbar-pad-y) var(--tbar-pad-x) calc(10px + var(--tbar-pad-y));
     transition: padding 0.3s;
     display: flex;
     flex-direction: column;
@@ -111,7 +111,6 @@ body.fullscreen-mode .container {
 body.fullscreen-mode #header,
 body.fullscreen-mode #controls,
 body.fullscreen-mode #stats,
-body.fullscreen-mode #videoInfo,
 body.fullscreen-mode .titlebar {
     display: none;
 }
@@ -234,34 +233,6 @@ header {
     gap: 12px;
 }
 
-.status-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    padding: 6px 12px;
-    border-radius: 999px;
-    background: rgba(48, 209, 88, 0.1);
-    border: 1px solid rgba(48, 209, 88, 0.3);
-    color: var(--ok);
-    font-size: 12px;
-    font-weight: 500;
-    letter-spacing: 0.3px;
-}
-
-.status-dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--ok);
-    box-shadow: 0 0 8px var(--ok);
-    animation: pulse 2s ease-in-out infinite;
-}
-
-@keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.35; }
-}
-
 .settings-btn {
     width: 40px;
     height: 40px;
@@ -305,7 +276,7 @@ header {
     flex-shrink: 0;
     padding: 10px 10px;
     border-radius: var(--radius);
-    margin-bottom: 12px;
+    margin-bottom: 10px;
     position: relative;
     /* 提升整个控制栏层级，让自定义下拉菜单能浮到视频区/时间线上方 */
     z-index: 120;
@@ -517,7 +488,7 @@ header {
 
 .speed-group {
     gap: 10px;
-    align-items: flex-start;
+    align-items: center;
 }
 
 .speed-control {
@@ -535,7 +506,7 @@ header {
 .speed-slider {
     -webkit-appearance: none;
     appearance: none;
-    width: 150px;
+    width: 210px;
     height: 18px;
     min-width: 0;
     padding: 0 !important;
@@ -611,25 +582,22 @@ header {
     outline-offset: 3px;
 }
 
-.speed-presets {
-    display: flex;
-    gap: 4px;
-}
-
-.speed-preset {
-    min-width: 31px;
-    padding: 4px 6px;
-    border: 1px solid rgba(255, 255, 255, 0.12);
+/* 速度重置按钮 */
+.speed-reset {
+    padding: 5px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
     border-radius: 7px;
     background: rgba(255, 255, 255, 0.07);
     color: var(--text-mute);
-    font: 600 10px var(--mono);
+    font: 600 11px var(--disp);
+    letter-spacing: 0.5px;
     cursor: pointer;
+    white-space: nowrap;
     transition: background 0.2s var(--ease), border-color 0.2s var(--ease), color 0.2s, transform 0.2s var(--ease-spring), box-shadow 0.2s;
 }
 
-.speed-preset:hover,
-.speed-preset.active {
+.speed-reset:hover,
+.speed-reset.active {
     border-color: rgba(10, 132, 255, 0.62);
     background: rgba(10, 132, 255, 0.24);
     color: #fff;
@@ -637,7 +605,7 @@ header {
     transform: translateY(-1px);
 }
 
-.speed-preset:active {
+.speed-reset:active {
     transform: scale(0.94);
 }
 
@@ -651,32 +619,26 @@ header {
     letter-spacing: 0.3px;
 }
 
-/* ===================== 统计信息条 ===================== */
+/* ===================== 统计信息（控制栏最右） ===================== */
 
-.stats {
-    display: flex;
-    gap: 26px;
-    flex-shrink: 0;
-    padding: 8px 16px;
-    margin-bottom: 12px;
+.stats-group {
+    margin-left: auto;
+    gap: 18px;
+    padding-right: 10px;
     font-family: var(--mono);
     font-size: 11.5px;
     letter-spacing: 0.5px;
     color: var(--text-dim);
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--line);
-    background: rgba(255, 255, 255, 0.03);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
+    white-space: nowrap;
 }
 
-.stats span {
+.stats-group span {
     display: inline-flex;
     align-items: center;
     gap: 6px;
 }
 
-.stats span::before {
+.stats-group span::before {
     content: '';
     width: 4px;
     height: 4px;
@@ -691,8 +653,8 @@ header {
     min-height: 0;
     display: flex;
     flex-direction: column;
-    margin-bottom: 14px;
-    padding: 12px;
+    margin-bottom: 10px;
+    padding: 8px;
     border-radius: var(--radius);
     background: var(--glass);
     backdrop-filter: blur(20px) saturate(140%);
@@ -711,34 +673,6 @@ body.fullscreen-mode .video-container {
     display: flex;
     flex-direction: column;
     box-shadow: none;
-}
-
-.video-info {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 12px;
-    flex-shrink: 0;
-    margin-bottom: 10px;
-    font-size: 12px;
-    color: var(--text-dim);
-    font-family: var(--mono);
-}
-
-.video-info span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.video-info span:first-child {
-    color: var(--text);
-    font-family: var(--disp);
-    letter-spacing: 0.3px;
-}
-
-.video-info span:last-child {
-    color: var(--accent);
 }
 
 .video-wrapper {
@@ -841,6 +775,37 @@ body.fullscreen-mode.timeline-shown .video-controls {
     bottom: 132px;
 }
 
+/* 全屏控制栏右侧组合：速度控制紧贴全屏按钮左侧 */
+.video-controls-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    pointer-events: none;
+}
+
+/* 全屏控制栏中的速度控制（全屏按钮左侧）：非全屏时隐藏 */
+.fs-speed-control {
+    display: none;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 14px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 13px;
+    background: rgba(20, 22, 30, 0.6);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    pointer-events: auto;
+}
+
+body.fullscreen-mode .fs-speed-control {
+    display: flex;
+}
+
+.fs-speed-slider {
+    width: 140px;
+}
+
 .control-btn {
     width: 44px;
     height: 44px;
@@ -872,7 +837,7 @@ body.fullscreen-mode.timeline-shown .video-controls {
 
 .timeline-container {
     flex-shrink: 0;
-    padding: 14px 16px 16px;
+    padding: 10px 16px 12px;
     border-radius: var(--radius);
     background: var(--glass);
     backdrop-filter: blur(20px) saturate(140%);
@@ -922,16 +887,60 @@ body.fullscreen-mode .time-labels {
 }
 
 .timeline-header {
+    position: relative;
     display: flex;
     justify-content: space-between;
-    align-items: baseline;
-    margin-bottom: 10px;
+    align-items: center;
+    /* 按钮组绝对定位不撑高度：固定最小高度容纳 23px 按钮，防止全屏小字号下按钮溢出框外 */
+    min-height: 25px;
+    margin-bottom: 6px;
 }
 
 .timeline-title-wrap {
     display: flex;
-    align-items: baseline;
-    gap: 14px;
+    align-items: center;
+    gap: 10px;
+}
+
+/* 缩放/定位按钮组：脱离左右布局流，绝对居中于时间线组件宽度 */
+.timeline-controls-center {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+/* 定位播放头按钮：点击视口一次性跳回播放位置（非开关，无激活态）。
+   尺寸规格与缩放按钮一致；配色与播放头橙色（--active）一致 */
+.follow-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    height: 23px;
+    padding: 3px 10px;
+    border: 1px solid rgba(255, 159, 10, 0.24);
+    border-radius: 7px;
+    background: rgba(255, 159, 10, 0.08);
+    color: var(--text-mute);
+    font: 10px var(--disp);
+    letter-spacing: 0.8px;
+    cursor: pointer;
+    transition: background 0.25s var(--ease), border-color 0.25s, color 0.25s, transform 0.25s var(--ease-spring);
+}
+
+.follow-toggle:hover {
+    border-color: rgba(255, 159, 10, 0.45);
+    background: rgba(255, 159, 10, 0.14);
+    color: #fff;
+    transform: translateY(-1px);
+}
+
+.follow-toggle:active {
+    transform: scale(0.92);
 }
 
 .zoom-level-wrap {
@@ -1026,7 +1035,7 @@ body.fullscreen-mode .timeline-hint {
 
 /* 轨道 */
 .timeline {
-    height: 52px;
+    height: 46px;
     background: rgba(8, 10, 16, 0.9);
     border: 1px solid rgba(255, 255, 255, 0.06);
     border-radius: 10px;
@@ -1095,7 +1104,7 @@ body.fullscreen-mode .timeline-hint {
 .timeline-preview {
     position: absolute;
     bottom: 64px;
-    width: 200px;
+    width: 230px;
     background: rgba(16, 18, 26, 0.94);
     backdrop-filter: blur(14px);
     -webkit-backdrop-filter: blur(14px);
@@ -1111,26 +1120,26 @@ body.fullscreen-mode .timeline-hint {
 
 /* 预览框大小档位 */
 .timeline-preview.preview-size-small {
-    width: 132px;
+    width: 152px;
 }
 .timeline-preview.preview-size-small .preview-video {
-    height: 74px;
+    height: 85px;
 }
 .timeline-preview.preview-size-small .preview-info {
-    padding-top: 74px;
+    padding-top: 85px;
 }
 .timeline-preview.preview-size-small .preview-time {
     font-size: 15px;
 }
 
 .timeline-preview.preview-size-large {
-    width: 260px;
+    width: 300px;
 }
 .timeline-preview.preview-size-large .preview-video {
-    height: 144px;
+    height: 166px;
 }
 .timeline-preview.preview-size-large .preview-info {
-    padding: 144px 14px 11px;
+    padding: 166px 14px 11px;
 }
 .timeline-preview.preview-size-large .preview-time {
     font-size: 19px;
@@ -1147,7 +1156,7 @@ body.fullscreen-mode .timeline-hint {
     top: 0;
     left: 0;
     width: 100%;
-    height: 112px;
+    height: 129px;
     object-fit: cover;
     background: #000;
     display: block;
@@ -1156,12 +1165,20 @@ body.fullscreen-mode .timeline-hint {
     pointer-events: none;
 }
 
+/* 垫底帧：旧帧保持不透明直至新帧渐入完成，杜绝交叉淡入的黑底透出 */
+.preview-video.underneath {
+    opacity: 1;
+    z-index: 2;
+}
+
+/* 新帧在顶层渐入，下方始终有不透明旧帧兜底 */
 .preview-video.active {
     opacity: 1;
+    z-index: 3;
 }
 
 .preview-info {
-    padding: 112px 12px 9px;
+    padding: 129px 12px 9px;
     background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.01));
     border-top: 1px solid var(--line);
 }
@@ -1186,7 +1203,7 @@ body.fullscreen-mode .timeline-hint {
 .time-labels {
     position: relative;
     height: 17px;
-    margin-top: 7px;
+    margin-top: 5px;
     font-size: 10.5px;
     letter-spacing: 0.4px;
     color: var(--text-mute);
@@ -1612,10 +1629,6 @@ body.fullscreen-mode .timeline-hint {
     animation: riseIn 0.55s 0.06s var(--ease) both;
 }
 
-.stats {
-    animation: riseIn 0.5s 0.12s var(--ease) both;
-}
-
 .video-container {
     animation: riseIn 0.6s 0.18s var(--ease) both;
 }
@@ -1696,11 +1709,6 @@ body.fullscreen-mode .timeline-container.visible:hover {
     transform: scale(0.92);
 }
 
-/* 状态灯脉动加速 */
-.status-dot {
-    animation: pulse 1.8s ease-in-out infinite;
-}
-
 /* 时间线轨道入场微光 */
 .timeline {
     transition: box-shadow 0.3s ease;
@@ -1731,10 +1739,6 @@ body.fullscreen-mode .timeline-container.visible:hover {
         padding: 4px 8px;
     }
 
-    .header-actions .status-pill {
-        display: none;
-    }
-
     .brand-sub {
         display: none;
     }
@@ -1745,10 +1749,11 @@ body.fullscreen-mode .timeline-container.visible:hover {
     }
 
     .speed-slider {
-        width: min(150px, 34vw);
+        width: min(210px, 40vw);
     }
 
-    .timeline-title-wrap {
-        gap: 8px;
+    /* 窄屏隐藏右侧提示文字，为居中按钮组让出空间避免重叠 */
+    .timeline-hint {
+        display: none;
     }
 }
