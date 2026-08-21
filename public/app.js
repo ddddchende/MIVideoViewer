@@ -5,6 +5,11 @@ const MAX_ZOOM = 128;
 const MERGE_GAP_MS = 60000; // 相邻视频合并的最大间隔：1ms = 严格连续（无任何间隙/重叠超过 1ms 即断开并标为缺失）
 const TIMELINE_PADDING = 10;
 const CLICK_DELAY_MS = 300; // 单击与双击区分
+const USER_PREF_KEYS = {
+    viewMode: 'mi-video-viewer-view-mode',
+    camera: 'mi-video-viewer-camera',
+    speed: 'mi-video-viewer-playback-speed'
+};
 
 /* ===================== 全局状态 ===================== */
 const state = {
@@ -26,7 +31,7 @@ const state = {
 /* ===================== DOM 引用 ===================== */
 const elements = {
     cameraSelect: document.getElementById('cameraSelect'),
-    viewMode: document.getElementById('viewMode'),
+    viewModeSeg: document.getElementById('viewModeSeg'),
     dateSelect: document.getElementById('dateSelect'),
     dateGroup: document.getElementById('dateGroup'),
     timeline: document.getElementById('timeline'),
@@ -35,6 +40,9 @@ const elements = {
     timelineCursor: document.getElementById('timelineCursor'),
     timelinePlayhead: document.getElementById('timelinePlayhead'),
     timelineContainer: document.getElementById('timelineContainer'),
+    videoContainer: document.getElementById('videoContainer'),
+    livePreviewFrame: document.getElementById('livePreviewFrame'),
+    liveLoading: document.getElementById('liveLoading'),
     videoPlayerA: document.getElementById('videoPlayerA'),
     videoPlayerB: document.getElementById('videoPlayerB'),
     videoCount: document.getElementById('videoCount'),
@@ -43,6 +51,7 @@ const elements = {
     playbackSpeedValue: document.getElementById('playbackSpeedValue'),
     zoomLevel: document.getElementById('zoomLevel'),
     playPauseBtn: document.getElementById('playPauseBtn'),
+    liveSyncBtn: document.getElementById('liveSyncBtn'),
     playIcon: document.getElementById('playIcon'),
     pauseIcon: document.getElementById('pauseIcon'),
     fullscreenBtn: document.getElementById('fullscreenBtn'),
@@ -55,7 +64,22 @@ const elements = {
     settingsCancel: document.getElementById('settingsCancel'),
     settingsSave: document.getElementById('settingsSave'),
     videoBasePathInput: document.getElementById('videoBasePath'),
-    previewSizeGroup: document.getElementById('previewSizeGroup')
+    previewSizeGroup: document.getElementById('previewSizeGroup'),
+    datePickerControl: document.getElementById('datePickerControl'),
+    datePickerLabel: document.getElementById('datePickerLabel'),
+    datePickerPopover: document.getElementById('datePickerPopover'),
+    datePickerMonth: document.getElementById('datePickerMonth'),
+    datePickerDays: document.getElementById('datePickerDays'),
+    datePickerPrev: document.getElementById('datePickerPrev'),
+    datePickerNext: document.getElementById('datePickerNext'),
+    xiaomiQrState: document.getElementById('xiaomiQrState'),
+    xiaomiQrCodeWrap: document.getElementById('xiaomiQrCodeWrap'),
+    xiaomiQrImg: document.getElementById('xiaomiQrImg'),
+    xiaomiQrMsg: document.getElementById('xiaomiQrMsg'),
+    xiaomiQrStartBtn: document.getElementById('xiaomiQrStartBtn'),
+    xiaomiQrCancelBtn: document.getElementById('xiaomiQrCancelBtn'),
+    xiaomiQrSyncBtn: document.getElementById('xiaomiQrSyncBtn'),
+    xiaomiQrClearBtn: document.getElementById('xiaomiQrClearBtn')
 };
 
 /* ===================== 渲染相关变量 ===================== */
@@ -63,6 +87,8 @@ let canvas = null;
 let ctx = null;
 let offscreenCanvas = null;
 let offscreenCtx = null;
+let availableVideoDates = new Set();
+let datePickerMonthDate = new Date();
 let timelineData = null;
 let previewContainer = null;
 let previewVideo = null;
@@ -250,6 +276,9 @@ let standbyReadyIndex = -1;
 // playerA 是否正在显示首帧待机画面（当前未在播放但画面非黑）。
 // 用于首次跳转时改用 B 无缝加载，保留 A 的帧，避免点击时间线闪黑屏
 let hasStandbyFrame = false;
+// 当前播放视频的 startTimeTs，跨视图切换时用于在新列表中定位。
+// 当 currentVideoIndex 因视频不在当前列表而置 -1 时，此变量仍保留播放视频信息。
+let lastPlayingVideoTs = null;
 
 let currentConfig = null;
 
@@ -371,6 +400,20 @@ function setupControls() {
 }
 
 function togglePlayPause() {
+    // 实时预览模式：直接控制 go2rtc 播放器内的 video
+    if (state.viewMode === 'live') {
+        const video = getLiveIframeVideo();
+        if (!video) return;
+        // 按操作意图立即更新图标（play() 是异步的，不能依赖 paused 立即回读），
+        // 后续以 iframe 内 video 的 play/pause 事件为准自动纠偏
+        if (video.paused) {
+            resumeLivePlayback(video);
+        } else {
+            video.pause();
+            updatePlayPauseIcon(false);
+        }
+        return;
+    }
     // 未在时间线选中任何位置：若视频已就绪则从头（第 0 个视频）开始播放
     if (state.currentVideoIndex < 0) {
         if (state.loadingVideos || state.videos.length === 0) return;
@@ -411,10 +454,13 @@ function togglePlayPause() {
 
 function updatePlayPauseIcon(playing) {
     state.isPlaying = playing;
-    if (playing) {
-        startPlayheadUpdate();
-    } else {
-        stopPlayheadUpdate();
+    // 实时预览没有时间线播放头，不驱动播放头更新
+    if (state.viewMode !== 'live') {
+        if (playing) {
+            startPlayheadUpdate();
+        } else {
+            stopPlayheadUpdate();
+        }
     }
     elements.playIcon.style.display = playing ? 'none' : 'block';
     elements.pauseIcon.style.display = playing ? 'block' : 'none';
@@ -617,6 +663,7 @@ function finishSwitch(player, index) {
 
     swapPlayers();
     state.currentVideoIndex = index;
+    lastPlayingVideoTs = state.videos[index].startTimeTs;
     isTransitioning = false;
     afterVideoSwitch(index);
 }
@@ -712,6 +759,7 @@ function playVideo(index, startOffsetMs = 0) {
             currentPlayer = a;
             nextPlayer = elements.videoPlayerB;
             state.currentVideoIndex = index;
+            lastPlayingVideoTs = state.videos[index].startTimeTs;
             a.play().catch(() => {});
             showVideoLoading(false);
             afterVideoSwitch(index);
@@ -741,6 +789,7 @@ function playVideo(index, startOffsetMs = 0) {
 }
 
 function preloadNextVideo() {
+    if (state.currentVideoIndex < 0) return;
     const nextIndex = state.currentVideoIndex + 1;
     if (nextIndex >= state.videos.length) return;
     const url = getVideoUrl(nextIndex);
@@ -753,6 +802,14 @@ function preloadNextVideo() {
 
 function handleVideoEnded() {
     if (isTransitioning) return;
+
+    // 当前播放的视频不在时间线列表中（如切换到了不同日期视图），播放结束即停止
+    if (state.currentVideoIndex < 0) {
+        state.isPlaying = false;
+        updatePlayPauseIcon(false);
+        stopPlayheadUpdate();
+        return;
+    }
 
     const nextIndex = state.currentVideoIndex + 1;
     if (nextIndex >= state.videos.length) {
@@ -774,6 +831,7 @@ function resetPlayers() {
     state.currentVideoIndex = -1;
     standbyReadyIndex = -1; // 重置后无就绪首帧
     hasStandbyFrame = false; // 重置后无显示中的首帧
+    lastPlayingVideoTs = null; // 重置后无播放视频记录
     isTransitioning = false;
     softPlayDisengage(false);
     stopPlayheadUpdate();
@@ -784,6 +842,15 @@ function resetPlayers() {
     elements.videoPlayerB.removeAttribute('src');
     elements.videoPlayerA.load();
     elements.videoPlayerB.load();
+
+    // 重置播放器角色和可见性：A 为默认活动播放器，B 为后备
+    // 不重置的话上次切换后 B 可能 opacity=1 盖在 A 上，导致 A 的待机帧被遮住
+    currentPlayer = elements.videoPlayerA;
+    nextPlayer = elements.videoPlayerB;
+    elements.videoPlayerA.style.opacity = '0';
+    elements.videoPlayerA.style.pointerEvents = 'none';
+    elements.videoPlayerB.style.opacity = '0';
+    elements.videoPlayerB.style.pointerEvents = 'none';
 
     showVideoLoading(false);
     updatePlayPauseIcon(false);
@@ -1747,20 +1814,21 @@ async function fetchCameras() {
         const data = await res.json();
         state.cameras = data.cameras || [];
 
-        elements.cameraSelect.innerHTML = '<option value="">-- 请选择 --</option>';
-        state.cameras.forEach(camera => {
-            const option = document.createElement('option');
-            option.value = camera;
-            option.textContent = camera;
-            elements.cameraSelect.appendChild(option);
-        });
+        renderLocalCameraSelect(state.cameras);
 
-        if (state.cameras.length > 0) {
-            state.selectedCamera = state.cameras[0];
+        if (state.viewMode !== 'live' && state.cameras.length > 0) {
+            let savedCamera = '';
+            try { savedCamera = localStorage.getItem(USER_PREF_KEYS.camera) || ''; } catch { /* 忽略 */ }
+            state.selectedCamera = state.cameras.includes(savedCamera) ? savedCamera : state.cameras[0];
             elements.cameraSelect.value = state.selectedCamera;
             // 重建自定义下拉选项，并同步当前选中显示
             if (customSelects.cameraSelect) customSelects.cameraSelect.rebuild();
-            fetchVideos();
+            if (state.viewMode === 'date') {
+                await setDefaultDate();
+                fetchVideos();
+            } else {
+                fetchVideos();
+            }
         } else if (placeholder) {
             placeholder.textContent = '未发现摄像头，请检查视频目录配置';
             placeholder.style.display = 'block';
@@ -1771,14 +1839,28 @@ async function fetchCameras() {
     }
 }
 
+/** 用本地目录摄像头列表重建下拉选项（live 模式切回录像模式时复用） */
+function renderLocalCameraSelect(cameras) {
+    elements.cameraSelect.innerHTML = '';
+    cameras.forEach(camera => {
+        const option = document.createElement('option');
+        option.value = camera;
+        option.textContent = camera;
+        elements.cameraSelect.appendChild(option);
+    });
+}
+
 // 视频列表请求序号：快速切换摄像头/日期时丢弃过期的响应
 let videosFetchToken = 0;
+let defaultDateFetchToken = 0;
 
 async function fetchVideos() {
     if (!state.selectedCamera) return;
 
     const token = ++videosFetchToken;
     const requestCamera = state.selectedCamera;
+    const requestMode = state.viewMode;
+    const requestDate = state.selectedDate;
 
     state.loadingVideos = true;
     if (placeholder) {
@@ -1792,10 +1874,10 @@ async function fetchVideos() {
 
     try {
         let url;
-        if (state.viewMode === 'date' && state.selectedDate) {
-            url = `/api/videos/${state.selectedCamera}/${state.selectedDate}`;
+        if (requestMode === 'date' && requestDate) {
+            url = `/api/videos/${requestCamera}/${requestDate}`;
         } else {
-            url = `/api/all-videos/${state.selectedCamera}`;
+            url = `/api/all-videos/${requestCamera}`;
         }
 
         const res = await fetch(url);
@@ -1805,7 +1887,10 @@ async function fetchVideos() {
         const data = await res.json();
 
         // 过期响应丢弃：期间用户已切换到其他摄像头/日期
-        if (token !== videosFetchToken || state.selectedCamera !== requestCamera) return;
+        if (token !== videosFetchToken
+            || state.selectedCamera !== requestCamera
+            || state.viewMode !== requestMode
+            || state.selectedDate !== requestDate) return;
 
         state.videos = (data.videos || []).map(v => ({
             ...v,
@@ -1849,6 +1934,122 @@ function resetTimelineView() {
     updateZoomDisplay();
 }
 
+/**
+ * 切换 date↔all 视图时加载新视频列表，但不重置播放器。
+ * 播放器继续播放当前视频（或保留待机帧），仅更新时间线数据。
+ * 若当前播放/待机的视频在新列表中，更新对应索引；否则置 -1（播放头隐藏，播放不受影响）。
+ */
+async function fetchVideosForSwitch() {
+    if (!state.selectedCamera) return;
+
+    const token = ++videosFetchToken;
+    const requestCamera = state.selectedCamera;
+    const requestMode = state.viewMode;
+    const requestDate = state.selectedDate;
+
+    // 保存当前播放视频或待机帧视频的 startTimeTs，用于在新列表中定位
+    let preserveTs = null;
+    let isStandby = false;
+    if (state.currentVideoIndex >= 0 && state.videos[state.currentVideoIndex]) {
+        preserveTs = state.videos[state.currentVideoIndex].startTimeTs;
+    } else if (lastPlayingVideoTs !== null) {
+        // 视频不在当前列表中（currentVideoIndex=-1）但仍在播放，用 lastPlayingVideoTs 定位
+        preserveTs = lastPlayingVideoTs;
+    } else if (hasStandbyFrame && standbyReadyIndex >= 0 && state.videos[standbyReadyIndex]) {
+        preserveTs = state.videos[standbyReadyIndex].startTimeTs;
+        isStandby = true;
+    }
+
+    state.loadingVideos = true;
+
+    // 清除预览状态（预览帧来自旧列表，避免闪现）
+    hidePreview();
+    if (previewVideo && previewVideoB) {
+        [previewVideo, previewVideoB].forEach((v) => {
+            v.removeAttribute('src');
+            v.load();
+            v.dataset.previewSrc = '';
+        });
+        previewHasFrame = false;
+    }
+
+    // 不重置播放器，只重置时间线视口（时间跨度变了，缩放/滚动位置需要重置）
+    resetTimelineView();
+
+    try {
+        let url;
+        if (requestMode === 'date' && requestDate) {
+            url = `/api/videos/${requestCamera}/${requestDate}`;
+        } else {
+            url = `/api/all-videos/${requestCamera}`;
+        }
+
+        const res = await fetch(url);
+        if (!res.ok) {
+            throw new Error(`HTTP ${res.status}`);
+        }
+        const data = await res.json();
+
+        // 过期响应丢弃：期间用户已切换到其他摄像头/日期
+        if (token !== videosFetchToken
+            || state.selectedCamera !== requestCamera
+            || state.viewMode !== requestMode
+            || state.selectedDate !== requestDate) return;
+
+        state.videos = (data.videos || []).map(v => ({
+            ...v,
+            startTimeTs: new Date(v.startTime).getTime()
+        }));
+
+        state.timelineHoverIndex = -1;
+        lastHoverIndex = -1;
+        lastRenderHoverIndex = -1;
+
+        // 在新列表中定位当前播放/待机的视频
+        if (preserveTs !== null) {
+            const newIdx = state.videos.findIndex(v => v.startTimeTs === preserveTs);
+            if (isStandby) {
+                if (newIdx >= 0) {
+                    // 待机帧视频在新列表中，更新索引
+                    standbyReadyIndex = newIdx;
+                } else {
+                    // 待机帧视频不在新列表中，清除并重新加载待机帧
+                    hasStandbyFrame = false;
+                    standbyReadyIndex = -1;
+                    standbyFrameToken++; // 作废旧的待机回调
+                }
+            } else {
+                // 正在播放的视频：找不到则置 -1（播放头隐藏，播放不受影响）
+                state.currentVideoIndex = newIdx;
+            }
+        }
+
+        cachedSegments = null;
+        updateStats();
+        baseNeedsRedraw = true;
+        renderTimelineBase();
+        renderTimeline();
+        updatePlayheadPosition();
+        if (state.isPlaying) {
+            // 从 live 切回时播放器被暂停过，需要恢复播放
+            currentPlayer.play().catch(() => {});
+            startPlayheadUpdate();
+        }
+    } catch (err) {
+        if (token !== videosFetchToken) return;
+        console.error('获取视频列表失败:', err);
+        showToast('获取视频列表失败，请检查服务端配置', 'error');
+    } finally {
+        if (token === videosFetchToken) {
+            state.loadingVideos = false;
+            // 待机帧被清除（视频不在新列表中），加载新列表的首帧
+            if (isStandby && !hasStandbyFrame && state.videos.length > 0) {
+                loadInitialStandbyFrame();
+            }
+        }
+    }
+}
+
 function formatDuration(totalMinutes) {
     // 自动进位：>60 进位到小时，>24 小时进位到天，从最大单位向下显示
     const days = Math.floor(totalMinutes / 1440);
@@ -1864,19 +2065,42 @@ function formatDuration(totalMinutes) {
 
 function updateStats() {
     elements.videoCount.textContent = `共 ${state.videos.length} 个视频`;
-    elements.totalDuration.textContent = `总时长: 约 ${formatDuration(state.videos.length)}`;
+    const totalMinutes = state.videos.reduce((total, video) => {
+        const end = video.startTimeTs + VIDEO_DURATION_MS;
+        const duration = video.endTimeTs && video.endTimeTs > video.startTimeTs
+            ? video.endTimeTs - video.startTimeTs
+            : end - video.startTimeTs;
+        return total + Math.max(0, duration) / 60000;
+    }, 0);
+    elements.totalDuration.textContent = `总时长: 约 ${formatDuration(Math.round(totalMinutes))}`;
 }
 
 async function setDefaultDate() {
+    const token = ++defaultDateFetchToken;
+    const requestCamera = state.selectedCamera;
     try {
-        const res = await fetch(`/api/dates/${state.selectedCamera}`);
+        const res = await fetch(`/api/dates/${requestCamera}`);
         const data = await res.json();
+        if (token !== defaultDateFetchToken
+            || requestCamera !== state.selectedCamera
+            || state.viewMode !== 'date') return;
         const dates = data.dates || [];
+        availableVideoDates = new Set(dates.map(item => item.date));
 
         if (dates.length > 0) {
-            state.selectedDate = dates[dates.length - 1].date;
+            // 保留已选日期（如果仍有效），否则默认选最新日期
+            if (!state.selectedDate || !availableVideoDates.has(state.selectedDate)) {
+                state.selectedDate = dates[dates.length - 1].date;
+            }
             elements.dateSelect.value = state.selectedDate;
+            elements.datePickerLabel.textContent = state.selectedDate.replace(/-/g, '/');
+            datePickerMonthDate = new Date(`${state.selectedDate}T00:00:00`);
+        } else {
+            state.selectedDate = '';
+            elements.dateSelect.value = '';
+            elements.datePickerLabel.textContent = '请选择日期';
         }
+        renderDatePicker();
     } catch (err) {
         console.error('获取日期列表失败:', err);
     }
@@ -1958,7 +2182,7 @@ async function openSettingsModal() {
     settingsTrigger = document.activeElement;
     elements.settingsModal.classList.add('show');
     await loadConfig();
-    elements.videoBasePathInput.focus();
+    await refreshXiaomiLoginState();
 }
 
 function closeSettingsModal() {
@@ -1979,6 +2203,205 @@ function setupSettings() {
             closeSettingsModal();
         }
     });
+
+    // 视频目录：点击浏览按钮打开系统文件夹选择对话框
+    const browseBtn = document.getElementById('videoBasePathBrowseBtn');
+    if (browseBtn) {
+        browseBtn.addEventListener('click', async () => {
+            if (!window.dialog) return;
+            const folder = await window.dialog.selectFolder();
+            if (folder) elements.videoBasePathInput.value = folder;
+        });
+    }
+}
+
+/* ===================== 小米账号扫码登录 ===================== */
+
+// 本轮扫码会话状态
+let xiaomiQrSession = null;    // { sessionId, lp, ... }
+let xiaomiQrPolling = false;   // 是否正在轮询等待扫码
+let xiaomiQrPollAbort = null;  // AbortController：用于取消轮询
+
+function setXiaomiQrState(state, label) {
+    elements.xiaomiQrState.dataset.state = state;
+    elements.xiaomiQrState.textContent = label;
+}
+
+function xiaomiQrShowMsg(text) {
+    elements.xiaomiQrMsg.textContent = text;
+}
+
+/** 打开设置时读取已登录账号，让"刷新后未登录"问题消失 */
+async function refreshXiaomiLoginState() {
+    try {
+        const res = await fetch('/api/live/token');
+        const data = await res.json();
+        if (data.success && data.accounts && data.accounts.length > 0) {
+            setXiaomiQrState('logged', '已登录');
+            xiaomiQrShowMsg(`已登录小米账号 ${data.accounts[0].userId}。可在设置外切「实时预览」查看摄像头。`);
+            return true;
+        }
+        setXiaomiQrState('idle', '未登录');
+        return false;
+    } catch (err) {
+        console.error('读取小米登录状态失败:', err);
+        return false;
+    }
+}
+
+/** 重新拉取已登录账号下的摄像头并写入 streams */
+async function syncXiaomiCameras() {
+    elements.xiaomiQrSyncBtn.disabled = true;
+    const origText = elements.xiaomiQrSyncBtn.textContent;
+    elements.xiaomiQrSyncBtn.textContent = '同步中…';
+    try {
+        const res = await fetch('/api/live/sync-cameras', { method: 'POST' });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            setXiaomiQrState('logged', '已连接');
+            xiaomiQrShowMsg(data.message || '摄像头同步完成，可在「实时预览」查看');
+            if (data.cameras > 0) showToast(`已同步 ${data.cameras} 个摄像头`, 'success');
+        } else {
+            setXiaomiQrState('error', '同步失败');
+            xiaomiQrShowMsg(data.error || '同步摄像头失败');
+        }
+    } catch (err) {
+        console.error('同步摄像头失败:', err);
+        setXiaomiQrState('error', '同步失败');
+        xiaomiQrShowMsg('与服务端通信失败，请重试');
+    } finally {
+        elements.xiaomiQrSyncBtn.disabled = false;
+        elements.xiaomiQrSyncBtn.textContent = origText;
+    }
+}
+
+async function clearXiaomiAccount() {
+    if (!confirm('确定清除已保存的小米账号和摄像头配置吗？')) return;
+    elements.xiaomiQrClearBtn.disabled = true;
+    try {
+        const res = await fetch('/api/live/account', { method: 'DELETE' });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) throw new Error(data.error || '清除账号失败');
+        liveStreamsLoaded = false;
+        state.liveStreams = [];
+        state.selectedCamera = '';
+        xiaomiQrResetUI();
+        xiaomiQrShowMsg('账号已清除');
+        showToast('小米账号已清除', 'success');
+        // 切回全部时间线模式
+        const allRadio = document.querySelector('input[name="viewMode"][value="all"]');
+        if (allRadio) {
+            allRadio.checked = true;
+            allRadio.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+    } catch (err) {
+        console.error('清除小米账号失败:', err);
+        showToast(err.message || '清除账号失败', 'error');
+    } finally {
+        elements.xiaomiQrClearBtn.disabled = false;
+    }
+}
+
+/** 关闭弹窗或切换卡片时清理进行中的扫码流程 */
+function xiaomiQrResetUI() {
+    if (xiaomiQrPollAbort) {
+        xiaomiQrPollAbort.abort();
+        xiaomiQrPollAbort = null;
+    }
+    xiaomiQrPolling = false;
+    xiaomiQrSession = null;
+    elements.xiaomiQrCodeWrap.style.display = 'none';
+    elements.xiaomiQrImg.src = '';
+    elements.xiaomiQrStartBtn.style.display = '';
+    elements.xiaomiQrStartBtn.disabled = false;
+    elements.xiaomiQrStartBtn.textContent = '获取二维码';
+    elements.xiaomiQrCancelBtn.style.display = 'none';
+    setXiaomiQrState('idle', '未登录');
+}
+
+/** 点击「获取二维码」：向服务端申请会话，展示二维码并开始轮询 */
+async function startXiaomiQrLogin() {
+    if (xiaomiQrPolling) return; // 已在轮询中，避免重复发起
+    elements.xiaomiQrStartBtn.disabled = true;
+    elements.xiaomiQrStartBtn.textContent = '获取中…';
+    setXiaomiQrState('waiting', '获取中');
+    xiaomiQrShowMsg('正在生成二维码…');
+
+    try {
+        const res = await fetch('/api/live/qr/start');
+        const data = await res.json();
+        if (!data.success || !data.session || !data.session.qr) {
+            throw new Error(data.error || '服务端未返回二维码');
+        }
+        xiaomiQrSession = data.session;
+        // 展示二维码（小米 qr 字段即二维码图片 URL）
+        elements.xiaomiQrImg.src = data.session.qr;
+        elements.xiaomiQrCodeWrap.style.display = 'block';
+        elements.xiaomiQrStartBtn.style.display = 'none';
+        elements.xiaomiQrCancelBtn.style.display = '';
+        setXiaomiQrState('waiting', '等待扫码');
+        xiaomiQrShowMsg('请用米家 App 或小米手机扫描二维码，登录后确认');
+        xiaomiQrPoll();
+    } catch (err) {
+        console.error('获取小米登录二维码失败:', err);
+        setXiaomiQrState('error', '获取失败');
+        xiaomiQrShowMsg(`二维码获取失败：${err.message}`);
+        elements.xiaomiQrStartBtn.disabled = false;
+        elements.xiaomiQrStartBtn.textContent = '重试';
+        elements.xiaomiQrState.dataset.state = 'error';
+    }
+}
+
+/** 轮询扫码结果：端点长阻塞直到扫码/超时/取消 */
+async function xiaomiQrPoll() {
+    if (!xiaomiQrSession) return;
+    xiaomiQrPolling = true;
+    xiaomiQrPollAbort = new AbortController();
+
+    const { lp } = xiaomiQrSession;
+    try {
+        const res = await fetch(`/api/live/qr/poll?lp=${encodeURIComponent(lp)}`, {
+            signal: xiaomiQrPollAbort.signal
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.success) {
+            setXiaomiQrState('logged', '已登录');
+            xiaomiQrShowMsg('登录成功，凭据已安全保存，正在同步摄像头…');
+            elements.xiaomiQrCodeWrap.style.display = 'none';
+            elements.xiaomiQrStartBtn.style.display = '';
+            elements.xiaomiQrStartBtn.textContent = '重新登录';
+            // 复位 disabled，否则会保持"获取中"忙指针且不可点
+            elements.xiaomiQrStartBtn.disabled = false;
+            elements.xiaomiQrCancelBtn.style.display = 'none';
+            showToast('小米账号登录成功', 'success');
+            closeSettingsModal();
+            liveStreamsLoaded = false;
+            await refreshLiveStreamsAfterLogin();
+        } else {
+            // 409 = 二维码过期/取消，502 = 网络或服务端错误
+            const isExpired = res.status === 409;
+            setXiaomiQrState('error', isExpired ? '已过期' : '失败');
+            xiaomiQrShowMsg(data.error || '登录流程中断，请重试');
+            xiaomiQrResetUI();
+            if (!isExpired) showToast(data.error || '扫码登录失败', 'error');
+        }
+    } catch (err) {
+        if (err.name !== 'AbortError') {
+            setXiaomiQrState('error', '失败');
+            xiaomiQrShowMsg('与服务端通信失败，请重试');
+        }
+        xiaomiQrResetUI();
+    } finally {
+        xiaomiQrPolling = false;
+        xiaomiQrPollAbort = null;
+    }
+}
+
+function setupXiaomiQr() {
+    elements.xiaomiQrStartBtn.addEventListener('click', startXiaomiQrLogin);
+    elements.xiaomiQrCancelBtn.addEventListener('click', xiaomiQrResetUI);
+    elements.xiaomiQrSyncBtn.addEventListener('click', syncXiaomiCameras);
+    elements.xiaomiQrClearBtn.addEventListener('click', clearXiaomiAccount);
 }
 
 /* ===================== Toast ===================== */
@@ -1999,7 +2422,12 @@ function showToast(message, type = 'info', duration = 3000) {
 
 elements.cameraSelect.addEventListener('change', async (e) => {
     state.selectedCamera = e.target.value;
+    try { localStorage.setItem(USER_PREF_KEYS.camera, state.selectedCamera); } catch { /* 忽略 */ }
     if (state.selectedCamera) {
+        if (state.viewMode === 'live') {
+            showLivePreview(state.selectedCamera);
+            return;
+        }
         if (state.viewMode === 'date') {
             await setDefaultDate();
         }
@@ -2009,6 +2437,10 @@ elements.cameraSelect.addEventListener('change', async (e) => {
         cachedSegments = null;
         stopPlayheadUpdate();
         resetPlayers();
+        if (state.viewMode === 'live') {
+            hideLivePreview();
+            return;
+        }
         if (placeholder) {
             placeholder.textContent = '请选择摄像头';
             placeholder.style.display = 'block';
@@ -2020,22 +2452,505 @@ elements.cameraSelect.addEventListener('change', async (e) => {
     }
 });
 
-elements.viewMode.addEventListener('change', async (e) => {
+elements.viewModeSeg.addEventListener('change', async (e) => {
+    if (!e.target.matches('input[name="viewMode"]')) return;
+    const prevMode = state.viewMode;
     state.viewMode = e.target.value;
+    try { localStorage.setItem(USER_PREF_KEYS.viewMode, state.viewMode); } catch { /* 忽略 */ }
     elements.dateGroup.style.display = state.viewMode === 'date' ? 'flex' : 'none';
 
-    if (state.selectedCamera) {
-        if (state.viewMode === 'date') {
-            await setDefaultDate();
+    if (state.viewMode === 'live') {
+        // 切到实时预览：记录切走前的录像模式和摄像头，切回时据此判断是否复用进度
+        preLiveViewMode = prevMode;
+        preLiveIsPlaying = state.isPlaying;
+        if (prevMode !== 'live' && state.selectedCamera) preLiveCamera = state.selectedCamera;
+        // 停止录像播放（保留进度，切回时恢复）
+        if (!currentPlayer.paused) currentPlayer.pause();
+        if (!nextPlayer.paused) nextPlayer.pause();
+        if (softPlay.active) softPlayDisengage(false);
+        stopPlayheadUpdate();
+        enterLiveLayout();
+        syncVolumeUI();
+        const loggedIn = await refreshXiaomiLoginState();
+        if (!loggedIn) {
+            openSettingsModal();
+            elements.xiaomiQrStartBtn.click();
+            return;
         }
+        await loadLiveStreamsWithRetry();
+        return;
+    }
+    liveStreamsRequestId++;
+    liveStreamsRetryId++;
+    hideLivePreview();
+    showTimelineAndVideo();
+    syncVolumeUI();
+
+    // 从 live 切回：还原录像播放状态（live 模式会设 state.isPlaying=true）
+    if (prevMode === 'live') state.isPlaying = preLiveIsPlaying;
+    // 清除实时预览留下的 placeholder
+    if (placeholder) placeholder.style.display = 'none';
+
+    // 切回本地录像模式：恢复本地摄像头下拉。
+    // 若切走前就在同一录像模式且已有视频列表和播放进度，直接恢复播放，不重新 fetchVideos；
+    // 若模式变了（date↔all，或从 live 切回不同模式），视频列表不同，必须重新加载
+    if (state.cameras && state.cameras.length) {
+        renderLocalCameraSelect(state.cameras);
+        // 从 live 切回：恢复切走前的录像摄像头（实时流名会覆盖 selectedCamera）
+        if (prevMode === 'live' && preLiveCamera && state.cameras.includes(preLiveCamera)) {
+            state.selectedCamera = preLiveCamera;
+        }
+        const camChanged = state.selectedCamera && state.cameras.includes(state.selectedCamera);
+        if (camChanged) {
+            elements.cameraSelect.value = state.selectedCamera;
+            if (customSelects.cameraSelect) customSelects.cameraSelect.rebuild();
+            // 从 live 切回：与切走前的模式比较；普通 date↔all 切换：与 prevMode 比较
+            const refMode = prevMode === 'live' ? preLiveViewMode : prevMode;
+            const sameMode = state.viewMode === refMode;
+            const hasProgress = state.videos.length > 0 && state.currentVideoIndex >= 0;
+            // 有播放进度、待机帧或仍在播放的视频：切换时不重置播放器，仅更新时间线数据
+            const hasPlayerContent = hasProgress || hasStandbyFrame || lastPlayingVideoTs !== null;
+            if (sameMode && hasProgress) {
+                if (state.viewMode === 'date') await setDefaultDate();
+                if (state.isPlaying) currentPlayer.play().catch(() => {});
+                baseNeedsRedraw = true;
+                renderTimelineBase();
+                renderTimeline();
+                updateStats();
+            } else if (hasPlayerContent) {
+                // date↔all 切换且有播放器内容：不重置播放器，仅更新时间线数据
+                if (state.viewMode === 'date') {
+                    // 从正在播放的视频推导日期，使日期自动对齐
+                    const playingVideo = state.currentVideoIndex >= 0
+                        ? state.videos[state.currentVideoIndex] : null;
+                    if (playingVideo && playingVideo.date) {
+                        state.selectedDate = playingVideo.date;
+                    } else if (lastPlayingVideoTs !== null) {
+                        const d = new Date(lastPlayingVideoTs);
+                        state.selectedDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                    }
+                    await setDefaultDate();
+                }
+                await fetchVideosForSwitch();
+            } else {
+                if (state.viewMode === 'date') await setDefaultDate();
+                fetchVideos();
+            }
+        } else {
+            state.selectedCamera = state.cameras[0];
+            elements.cameraSelect.value = state.selectedCamera;
+            if (customSelects.cameraSelect) customSelects.cameraSelect.rebuild();
+            if (state.viewMode === 'date') await setDefaultDate();
+            fetchVideos();
+        }
+    } else {
+        fetchCameras();
+    }
+});
+
+/* ===================== 实时预览 ===================== */
+
+let liveStreamsLoaded = false;
+let liveStreamsRequestId = 0;
+let liveStreamsRetryId = 0;
+// 切到实时预览前的录像模式（'all' / 'date'），切回时据此判断是否复用进度
+let preLiveViewMode = 'all';
+// 切到实时预览前的录像摄像头名（实时流名会覆盖 selectedCamera，切回时恢复）
+let preLiveCamera = '';
+// 切到实时预览前录像是否在播放（live 模式会设 state.isPlaying=true，切回时需还原）
+let preLiveIsPlaying = false;
+
+/** live 模式布局：隐藏底部时间线，videoContainer 切到实时层（复用同一组播放控件） */
+function setLiveLayout(on) {
+    elements.videoContainer.classList.toggle('live-active', on);
+}
+function enterLiveLayout() {
+    elements.timelineContainer.style.display = 'none';
+    elements.videoContainer.style.display = '';
+    setLiveLayout(true);
+}
+function showTimelineAndVideo() {
+    setLiveLayout(false);
+    elements.timelineContainer.style.display = '';
+    elements.videoContainer.style.display = '';
+}
+/**
+ * 隐藏实时预览：切回录像层，iframe 隐藏但 video 后台继续播放。
+ * 不能暂停 video——go2rtc 播放器暂停后停止接收流，恢复时画面冻结（只渲染一帧）；
+ * 浏览器也没有"只接收不渲染"的 API。保持播放 + 隐藏 iframe（display:none）：
+ * 连接与播放状态不断，切回立即出画面；Chromium 对不可见 video 会优化渲染省资源。
+ * 隐藏期间静音，避免后台播放出声。
+ */
+function hideLivePreview() {
+    setLiveLayout(false);
+    if (elements.liveLoading) elements.liveLoading.style.display = 'none';
+    const video = getLiveIframeVideo();
+    if (video) {
+        liveWasMuted = video.muted;
+        video.muted = true;
+    }
+}
+
+// 隐藏前 video 的静音状态，切回时恢复
+let liveWasMuted = true;
+
+/** 取 iframe 内 go2rtc 播放器的 video 元素（跨域未就绪时为 null） */
+function getLiveIframeVideo() {
+    try {
+        const doc = elements.livePreviewFrame && elements.livePreviewFrame.contentDocument;
+        return doc ? doc.querySelector('video') : null;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * 恢复实时播放：go2rtc 播放器暂停后直接 play() 常见只渲染一帧就停
+ * （暂停期间 go2rtc 停止推流，恢复时缓冲已断档）。
+ * 策略：play() 后用 requestVideoFrameCallback 统计渲染帧数
+ * （WebRTC 直播流的 currentTime 不推进，不能用它判断卡帧）；
+ * 若 2 秒内渲染帧数不足 2 帧，判定卡帧，自动重载播放器重建连接。
+ * 注意：go2rtc 前端在 video 暂停后可能再次暂停 video，因此不检查 video.paused，
+ * 只以实际渲染帧数为准。
+ */
+function resumeLivePlayback(video) {
+    video.play().catch(() => {});
+    updatePlayPauseIcon(true);
+    // 有积压缓冲时先追到直播边缘，避免从旧位置慢放
+    try {
+        if (video.buffered.length) {
+            const end = video.buffered.end(video.buffered.length - 1);
+            if (end > video.currentTime + 0.5) video.currentTime = end - 0.1;
+        }
+    } catch { /* WebRTC 源无可跳缓冲 */ }
+
+    let frameCount = 0;
+    const onFrame = () => {
+        frameCount++;
+        try { video.requestVideoFrameCallback(onFrame); } catch { /* 已停止 */ }
+    };
+    try {
+        if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(onFrame);
+    } catch { /* 不支持 */ }
+
+    setTimeout(() => {
+        if (state.viewMode !== 'live') return;
+        // 2 秒内渲染帧数不足 2 帧 → 卡帧，重建连接
+        if (frameCount < 2) {
+            console.warn('[live] 恢复播放卡帧，自动重建连接');
+            try {
+                elements.livePreviewFrame.contentWindow.location.reload();
+                elements.liveSyncBtn.classList.add('spinning');
+            } catch {
+                showLivePreview(livePreviewStreamNameLast);
+            }
+        }
+    }, 2000);
+}
+
+/**
+ * 桥接 iframe 内 go2rtc 播放器：禁用其原生控件（统一用应用自定义控件），
+ * 监听内部 video 的 play/pause 事件同步播放按钮图标，
+ * 并在渲染出第一帧时隐藏实时加载动画。
+ */
+function setupLivePlayerBridge() {
+    try {
+        const doc = elements.livePreviewFrame.contentDocument;
+        if (!doc) return;
+        const apply = () => {
+            const video = doc.querySelector('video');
+            if (!video) return;
+            if (video.controls) video.controls = false;
+            if (!video._liveCtlBound) {
+                video._liveCtlBound = true;
+                video.addEventListener('play', () => {
+                    if (state.viewMode === 'live') updatePlayPauseIcon(true);
+                });
+                video.addEventListener('pause', () => {
+                    if (state.viewMode === 'live') updatePlayPauseIcon(false);
+                });
+                // 渲染出第一帧后隐藏加载动画（一次性）
+                const hideLoading = () => {
+                    if (elements.liveLoading) elements.liveLoading.style.display = 'none';
+                };
+                try { video.requestVideoFrameCallback(hideLoading); } catch { /* 不支持 */ }
+            }
+        };
+        apply();
+        // go2rtc 页面可能动态创建 video 元素：监听 DOM 变化兜底。
+        // 观察者随 iframe 文档生命周期，导航重载后旧文档连同观察者一起被回收
+        new MutationObserver(apply).observe(doc.documentElement, { childList: true, subtree: true });
+    } catch { /* iframe 尚未加载 */ }
+}
+
+elements.livePreviewFrame.addEventListener('load', () => {
+    setupLivePlayerBridge();
+    elements.liveSyncBtn.classList.remove('spinning');
+});
+
+/** 同步按钮：重载 go2rtc 播放器页面，重建 WebRTC 连接刷新实时流 */
+elements.liveSyncBtn.addEventListener('click', () => {
+    if (state.viewMode !== 'live' || !livePreviewStreamNameLast) return;
+    elements.liveSyncBtn.classList.add('spinning');
+    // 重连期间显示加载动画，渲染出第一帧后由桥接逻辑隐藏
+    if (elements.liveLoading) elements.liveLoading.style.display = 'flex';
+    try {
+        elements.livePreviewFrame.contentWindow.location.reload();
+    } catch {
+        // 兜底：直接重设 src 重建播放器
+        showLivePreview(livePreviewStreamNameLast);
+    }
+});
+
+// 当前正在预览的流名（主流），重选同流时避免整页重载
+let livePreviewStreamNameLast = '';
+
+/**
+ * 显示实时预览：只创建一个 go2rtc 播放器，避免同时建立两套 WebRTC/UDP 连接。
+ */
+function showLivePreview(streamName) {
+    enterLiveLayout();
+    // 实时流默认自动播放（静音），图标初始化为播放中；后续由内部 video 事件纠偏
+    updatePlayPauseIcon(true);
+    // 同一流且连接被保留（切走时未断开）：直接显示既有画面，不重连。
+    // 恢复播放走卡帧检测：隐藏期间流可能已断档，单纯 play() 会画面冻结
+    if (streamName === livePreviewStreamNameLast) {
+        const video = getLiveIframeVideo();
+        if (video) {
+            video.muted = liveWasMuted;
+            resumeLivePlayback(video);
+        }
+        verifyLivePreviewConnection(streamName);
+        return;
+    }
+    livePreviewStreamNameLast = streamName;
+
+    // 补偿预热：确保 go2rtc 已建立到摄像头的 P2P 连接。
+    // 服务端启动时自动预热，但若 go2rtc 启动慢或预热未完成，此处补偿触发。
+    // MSE 预热连接使 go2rtc 提前建立 producer，iframe 的 WebRTC 消费者复用同一 producer 秒出画面。
+    fetch('/api/live/warmup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stream: streamName })
+    }).catch(() => {});
+
+    // 新流连接期间显示加载动画，渲染出第一帧后由桥接逻辑隐藏
+    if (elements.liveLoading) elements.liveLoading.style.display = 'flex';
+
+    elements.livePreviewFrame.src =
+        `/api/live/stream.html?src=${encodeURIComponent(streamName)}&mode=webrtc`;
+}
+
+function isLiveIframeReady(frame) {
+    try {
+        const video = frame && frame.contentDocument && frame.contentDocument.querySelector('video');
+        return !!(video && video.readyState >= 2);
+    } catch {
+        return false;
+    }
+}
+
+async function isAnyLiveConsumer(streamName) {
+    return isLiveIframeReady(elements.livePreviewFrame);
+}
+
+/**
+ * 复用保留连接前的一次性体检：若 go2rtc 已重启等导致连接失效，
+ * 自动重载以恢复播放；连接仍健康则原样保持（切回秒出画面）。
+ */
+async function verifyLivePreviewConnection(streamName) {
+    if (await isAnyLiveConsumer(streamName)) return;
+    // 连接已失效：仅在该流仍为当前流、且容器可见时重载，避免误伤刚切走/隐藏的场景
+    if (streamName !== livePreviewStreamNameLast) return;
+    if (!elements.videoContainer.classList.contains('live-active')) return;
+    console.warn('[live] 保留的连接已失效，重新建立:', streamName);
+    livePreviewStreamNameLast = '';
+    showLivePreview(streamName);
+}
+
+/** 拉取 go2rtc 实时流名，填充摄像头下拉（缓存，除非 go2rtc 变了） */
+async function loadLiveStreams() {
+    hideLivePreview();
+    if (liveStreamsLoaded && state.liveStreams && state.liveStreams.length) {
+        renderLiveSelect(state.liveStreams);
+        return;
+    }
+    const requestId = ++liveStreamsRequestId;
+    if (placeholder) {
+        placeholder.textContent = '正在加载实时摄像头...';
+        placeholder.style.display = 'block';
+    }
+    try {
+        const res = await fetch('/api/live/cameras');
+        const data = await res.json();
+        if (requestId !== liveStreamsRequestId || state.viewMode !== 'live') return;
+        if (!res.ok || data.error) throw new Error(data.error || `请求失败（${res.status}）`);
+        const streams = Array.isArray(data.streams) ? data.streams : [];
+        if (streams.length > 0) {
+            state.liveStreams = streams;
+            liveStreamsLoaded = true;
+            // 批量补偿预热：确保所有流都有 go2rtc producer 连接
+            fetch('/api/live/warmup', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ streams })
+            }).catch(() => {});
+            renderLiveSelect(streams);
+            return;
+        }
+        if (state.liveStreams && state.liveStreams.length > 0) {
+            liveStreamsLoaded = true;
+            renderLiveSelect(state.liveStreams);
+            return;
+        }
+        liveStreamsLoaded = false;
+        renderLiveSelect([]);
+    } catch (err) {
+        if (requestId !== liveStreamsRequestId || state.viewMode !== 'live') return;
+        console.error('加载实时摄像头失败:', err);
+        if (state.liveStreams && state.liveStreams.length > 0) {
+            liveStreamsLoaded = true;
+            renderLiveSelect(state.liveStreams);
+            return;
+        }
+        if (placeholder) {
+            placeholder.textContent = '实时预览不可用（go2rtc 未就绪）';
+            placeholder.style.display = 'block';
+        }
+    }
+}
+
+async function loadLiveStreamsWithRetry() {
+    const retryId = ++liveStreamsRetryId;
+    for (let attempt = 0; attempt < 15; attempt++) {
+        if (retryId !== liveStreamsRetryId || state.viewMode !== 'live') return;
+        if (!await waitForLiveService(retryId)) return;
+        await loadLiveStreams();
+        if (state.liveStreams && state.liveStreams.length > 0) return;
+        if (attempt < 14) await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+}
+
+async function waitForLiveService(retryId) {
+    for (let attempt = 0; attempt < 30; attempt++) {
+        if (retryId !== liveStreamsRetryId || state.viewMode !== 'live') return false;
+        try {
+            const res = await fetch('/api/live/status');
+            const status = await res.json();
+            if (status && ['running', 'external'].includes(status.status)) return true;
+        } catch {}
+        await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    return false;
+}
+
+async function refreshLiveStreamsAfterLogin() {
+    for (let attempt = 0; attempt < 15; attempt++) {
+        if (state.viewMode !== 'live') return;
+        liveStreamsLoaded = false;
+        await loadLiveStreams();
+        if (state.liveStreams && state.liveStreams.length > 0) return;
+        await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+}
+
+function renderLiveSelect(streams) {
+    // 下拉显示容器（placeholder 在 videoContainer 里，live 模式已隐藏）
+    elements.cameraSelect.innerHTML = '';
+    if (streams.length === 0) {
+        elements.cameraSelect.innerHTML = '<option value="">暂无实时摄像头</option>';
+        state.selectedCamera = '';
+        if (customSelects.cameraSelect) customSelects.cameraSelect.rebuild();
+        return;
+    }
+    streams.forEach(name => {
+        const option = document.createElement('option');
+        option.value = name;
+        option.textContent = name;
+        elements.cameraSelect.appendChild(option);
+    });
+    // 优先恢复上次查看的流（其连接可能仍保持，切回秒出画面），否则选第一个
+    let savedCamera = '';
+    try { savedCamera = localStorage.getItem(USER_PREF_KEYS.camera) || ''; } catch { /* 忽略 */ }
+    const preferred = streams.includes(livePreviewStreamNameLast)
+        ? livePreviewStreamNameLast
+        : (streams.includes(savedCamera) ? savedCamera : streams[0]);
+    state.selectedCamera = preferred;
+    elements.cameraSelect.value = preferred;
+    if (customSelects.cameraSelect) customSelects.cameraSelect.rebuild();
+    showLivePreview(preferred);
+}
+
+elements.dateSelect.addEventListener('change', (e) => {
+    defaultDateFetchToken++;
+    state.selectedDate = e.target.value;
+    if (state.selectedDate) elements.datePickerLabel.textContent = state.selectedDate.replace(/-/g, '/');
+    if (state.selectedCamera && state.selectedDate) {
         fetchVideos();
     }
 });
 
-elements.dateSelect.addEventListener('change', (e) => {
-    state.selectedDate = e.target.value;
-    if (state.selectedCamera && state.selectedDate) {
-        fetchVideos();
+elements.datePickerControl.addEventListener('click', () => {
+    datePickerMonthDate = state.selectedDate
+        ? new Date(`${state.selectedDate}T00:00:00`)
+        : new Date();
+    renderDatePicker();
+    elements.datePickerPopover.hidden = false;
+});
+
+function formatPickerDate(year, month, day) {
+    return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+function renderDatePicker() {
+    const year = datePickerMonthDate.getFullYear();
+    const month = datePickerMonthDate.getMonth();
+    elements.datePickerMonth.textContent = `${year}年${month + 1}月`;
+    elements.datePickerDays.innerHTML = '';
+    const firstDay = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const previousDays = new Date(year, month, 0).getDate();
+    for (let i = 0; i < 42; i++) {
+        const dayOffset = i - firstDay + 1;
+        const date = new Date(year, month, dayOffset);
+        const isCurrentMonth = dayOffset >= 1 && dayOffset <= daysInMonth;
+        const dateValue = formatPickerDate(date.getFullYear(), date.getMonth(), date.getDate());
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = `date-picker-day${isCurrentMonth ? '' : ' other-month'}`;
+        button.textContent = String(date.getDate());
+        if (availableVideoDates.has(dateValue)) button.classList.add('has-video');
+        if (dateValue === state.selectedDate) button.classList.add('selected');
+        button.addEventListener('click', () => {
+            defaultDateFetchToken++;
+            state.selectedDate = dateValue;
+            elements.dateSelect.value = dateValue;
+            elements.datePickerLabel.textContent = dateValue.replace(/-/g, '/');
+            datePickerMonthDate = new Date(`${dateValue}T00:00:00`);
+            elements.datePickerPopover.hidden = true;
+            if (state.selectedCamera) fetchVideos();
+        });
+        elements.datePickerDays.appendChild(button);
+    }
+}
+
+elements.datePickerPrev.addEventListener('click', (event) => {
+    event.stopPropagation();
+    datePickerMonthDate.setMonth(datePickerMonthDate.getMonth() - 1);
+    renderDatePicker();
+});
+
+elements.datePickerNext.addEventListener('click', (event) => {
+    event.stopPropagation();
+    datePickerMonthDate.setMonth(datePickerMonthDate.getMonth() + 1);
+    renderDatePicker();
+});
+
+document.addEventListener('click', (event) => {
+    if (!elements.datePickerPopover.hidden
+        && !elements.datePickerPopover.contains(event.target)
+        && !elements.datePickerControl.contains(event.target)) {
+        elements.datePickerPopover.hidden = true;
     }
 });
 
@@ -2076,6 +2991,7 @@ if (fsSpeedSlider) {
 
 function applyPlaybackSpeed(speed) {
     state.playbackSpeed = speed;
+    try { localStorage.setItem(USER_PREF_KEYS.speed, String(speed)); } catch { /* 忽略 */ }
     elements.playbackSpeedValue.textContent = `${formatSpeed(speed)}x`;
     // 进度条按指数档位着色：1x→0%，512x→100%
     const level = Math.min(SPEED_MAX_LEVEL, Math.max(0, Math.log2(speed)));
@@ -2110,6 +3026,102 @@ function applyPlaybackSpeed(speed) {
 function formatSpeed(speed) {
     return Number.isInteger(speed) ? String(speed) : speed.toFixed(1).replace(/\.0$/, '');
 }
+
+/* ===================== 音量控制（录像 / 实时独立） ===================== */
+
+const VOLUME_PREF_KEY_REC = 'mi-video-viewer-volume-rec';
+const VOLUME_PREF_KEY_LIVE = 'mi-video-viewer-volume-live';
+const volumeBtn = document.getElementById('volumeBtn');
+const volumeSlider = document.getElementById('volumeSlider');
+const volumeIcon = document.getElementById('volumeIcon');
+const volumeMuteIcon = document.getElementById('volumeMuteIcon');
+
+/** 当前模式下的目标 video：录像为当前播放器，实时为 iframe 内 go2rtc 播放器 */
+function getActiveVideo() {
+    if (state.viewMode === 'live') return getLiveIframeVideo();
+    return currentPlayer;
+}
+
+/** 当前模式的音量偏好 key */
+function getVolumePrefKey() {
+    return state.viewMode === 'live' ? VOLUME_PREF_KEY_LIVE : VOLUME_PREF_KEY_REC;
+}
+
+/** 读取当前模式的音量偏好 */
+function loadVolumePref() {
+    const def = { volume: 1, muted: false };
+    try { return JSON.parse(localStorage.getItem(getVolumePrefKey())) || def; } catch { return def; }
+}
+
+/** 应用音量/静音到当前模式的 video，并同步图标与滑块 */
+function applyVolume(volume, muted) {
+    const vol = Math.min(1, Math.max(0, volume));
+    try { localStorage.setItem(getVolumePrefKey(), JSON.stringify({ volume: vol, muted })); } catch { /* 忽略 */ }
+    if (volumeSlider) {
+        volumeSlider.value = String(Math.round(vol * 100));
+        volumeSlider.style.setProperty('--speed-progress', `${vol * 100}%`);
+    }
+    if (volumeIcon && volumeMuteIcon) {
+        const showMute = muted || vol === 0;
+        volumeIcon.style.display = showMute ? 'none' : 'block';
+        volumeMuteIcon.style.display = showMute ? 'block' : 'none';
+    }
+    const video = getActiveVideo();
+    if (video) {
+        video.volume = vol;
+        video.muted = muted || vol === 0;
+    }
+}
+
+/** 切换模式时同步音量 UI 到新模式的偏好（不改变另一个模式的设置） */
+function syncVolumeUI() {
+    const pref = loadVolumePref();
+    if (volumeSlider) {
+        volumeSlider.value = String(Math.round(pref.volume * 100));
+        volumeSlider.style.setProperty('--speed-progress', `${pref.volume * 100}%`);
+    }
+    if (volumeIcon && volumeMuteIcon) {
+        const showMute = pref.muted || pref.volume === 0;
+        volumeIcon.style.display = showMute ? 'none' : 'block';
+        volumeMuteIcon.style.display = showMute ? 'block' : 'none';
+    }
+}
+
+if (volumeSlider) {
+    volumeSlider.addEventListener('input', (e) => {
+        const vol = parseInt(e.target.value, 10) / 100;
+        applyVolume(vol, vol === 0);
+    });
+}
+if (volumeBtn) {
+    volumeBtn.addEventListener('click', () => {
+        const pref = loadVolumePref();
+        const willMute = !(pref.muted || pref.volume === 0);
+        applyVolume(willMute ? 0 : (pref.volume || 1), willMute);
+    });
+}
+
+// 启动恢复上次音量设置
+syncVolumeUI();
+
+/* ===================== 实时预览登录状态守卫 ===================== */
+
+// 每秒检查：在实时预览模式、设置弹窗关闭、且未登录小米账号时，自动切回全部时间线
+setInterval(async () => {
+    if (state.viewMode !== 'live') return;
+    if (elements.settingsModal.classList.contains('show')) return;
+    try {
+        const res = await fetch('/api/live/token');
+        const data = await res.json();
+        if (!data.success || !data.accounts || data.accounts.length === 0) {
+            const allRadio = document.querySelector('input[name="viewMode"][value="all"]');
+            if (allRadio) {
+                allRadio.checked = true;
+                allRadio.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        }
+    } catch { /* 忽略 */ }
+}, 500);
 
 /* ===================== 自定义下拉菜单 ===================== */
 
@@ -2223,10 +3235,28 @@ function initCustomSelects() {
 
 initCustomSelects();
 setupSettings();
+setupXiaomiQr();
 initCanvas();
-// 初始化日期选择组显示状态
+try {
+    const savedViewMode = localStorage.getItem(USER_PREF_KEYS.viewMode);
+    if (['date', 'all', 'live'].includes(savedViewMode)) {
+        state.viewMode = savedViewMode;
+        const radio = document.querySelector(`input[name="viewMode"][value="${savedViewMode}"]`);
+        if (radio) radio.checked = true;
+    }
+    const savedSpeed = Number(localStorage.getItem(USER_PREF_KEYS.speed));
+    if (Number.isFinite(savedSpeed) && savedSpeed >= 1 && savedSpeed <= 512) {
+        state.playbackSpeed = savedSpeed;
+        applyPlaybackSpeed(savedSpeed);
+    }
+} catch { /* 忽略无痕模式或存储不可用 */ }
 elements.dateGroup.style.display = state.viewMode === 'date' ? 'flex' : 'none';
-fetchCameras();
+if (state.viewMode === 'live') {
+    enterLiveLayout();
+}
+fetchCameras().then(() => {
+    if (state.viewMode === 'live') loadLiveStreamsWithRetry();
+});
 
 /* ===================== 窗口控制（Electron 自绘标题栏） ===================== */
 

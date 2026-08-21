@@ -1,7 +1,25 @@
 @echo off
-chcp 65001 >nul
-echo 正在启动小米摄像头录像查看器...
-echo 按 Ctrl+C 停止服务
+cd /d "%~dp0"
+
+echo ==================================================
+echo   MI Video Viewer - Electron secure launcher
+echo ==================================================
+echo.
+
+where npm >nul 2>nul
+if errorlevel 1 (
+    echo [ERROR] npm not found. Install Node.js first: https://nodejs.org
+    echo.
+    pause
+    exit /b 1
+)
+
+echo Starting in Electron mode (encrypted credentials)...
+echo If dependencies are missing, run: npm install
+echo Press Ctrl+C to stop
 echo --------------------------------------------------
-node server.js
+call npm start
+
+echo.
+echo Program exited.
 pause

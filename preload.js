@@ -6,3 +6,7 @@ contextBridge.exposeInMainWorld('windowControls', {
     close: () => ipcRenderer.send('window:close'),
     isMaximized: () => ipcRenderer.sendSync('window:is-maximized')
 });
+
+contextBridge.exposeInMainWorld('dialog', {
+    selectFolder: () => ipcRenderer.invoke('dialog:selectFolder')
+});

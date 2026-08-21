@@ -46,7 +46,7 @@
                 </button>
             </div>
         </header>
-        
+
         <div class="controls" id="controls">
             <div class="control-group">
                 <label>选择摄像头:</label>
@@ -64,24 +64,41 @@
             
             <div class="control-group">
                 <label>查看模式:</label>
-                <div class="custom-select" data-custom-select="viewMode">
-                    <button type="button" class="custom-select-trigger" aria-haspopup="listbox">
-                        <span class="custom-select-label">全部时间线</span>
-                        <svg class="select-chevron" viewBox="0 0 24 24" aria-hidden="true">
-                            <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                    </button>
-                    <select id="viewMode" class="custom-select-native">
-                        <option value="date">按日期查看</option>
-                        <option value="all" selected>全部时间线</option>
-                    </select>
-                    <div class="custom-select-menu" role="listbox"></div>
+                <div class="segmented view-mode-seg" id="viewModeSeg" role="radiogroup" aria-label="查看模式">
+                    <label class="segment">
+                        <input type="radio" name="viewMode" value="date" aria-label="按日期查看">
+                        <span>按日期</span>
+                    </label>
+                    <label class="segment">
+                        <input type="radio" name="viewMode" value="all" checked aria-label="全部时间线">
+                        <span>全部时间线</span>
+                    </label>
+                    <label class="segment">
+                        <input type="radio" name="viewMode" value="live" aria-label="实时预览">
+                        <span>实时预览</span>
+                    </label>
                 </div>
             </div>
             
             <div class="control-group" id="dateGroup">
                 <label>选择日期:</label>
-                <input type="date" id="dateSelect">
+                <button type="button" class="date-picker-control" id="datePickerControl" aria-label="选择日期">
+                    <span id="datePickerLabel">请选择日期</span>
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <rect x="3" y="5" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/>
+                        <path d="M7 3v4M17 3v4M3 10h18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                    </svg>
+                </button>
+                <input type="date" id="dateSelect" tabindex="-1" aria-hidden="true">
+                <div class="date-picker-popover" id="datePickerPopover" hidden>
+                    <div class="date-picker-header">
+                        <button type="button" class="date-picker-nav" id="datePickerPrev" aria-label="上个月">‹</button>
+                        <strong id="datePickerMonth"></strong>
+                        <button type="button" class="date-picker-nav" id="datePickerNext" aria-label="下个月">›</button>
+                    </div>
+                    <div class="date-picker-weekdays"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div>
+                    <div class="date-picker-days" id="datePickerDays"></div>
+                </div>
             </div>
             
             <div class="control-group speed-group">
@@ -109,26 +126,53 @@
                 <video id="videoPlayerB" class="video-layer" preload="metadata" style="opacity:0;pointer-events:none;">
                     您的浏览器不支持视频播放
                 </video>
-                
+
+                <!-- 实时预览层：live 模式下替代录像画面，复用同一组播放控件 -->
+                <iframe id="livePreviewFrame" title="摄像头实时画面" allow="autoplay; fullscreen"></iframe>
+
+                <!-- 实时预览加载动画：连接/重连期间显示，渲染出第一帧后隐藏 -->
+                <div class="video-loading" id="liveLoading" style="display:none;">
+                    <div class="spinner"></div>
+                    <div class="loading-text">正在连接实时画面...</div>
+                </div>
+
                 <div class="video-loading" id="videoLoading" style="display:none;">
                     <div class="spinner"></div>
                     <div class="loading-text">正在加载视频...</div>
                 </div>
                 
                 <div class="video-controls" id="videoControls">
-                    <button id="playPauseBtn" class="control-btn" title="播放/暂停">
-                        <svg id="playIcon" viewBox="0 0 24 24" width="24" height="24">
-                            <path fill="currentColor" d="M8 5v14l11-7z"/>
-                        </svg>
-                        <svg id="pauseIcon" viewBox="0 0 24 24" width="24" height="24" style="display:none;">
-                            <path fill="currentColor" d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
-                        </svg>
-                    </button>
+                    <div class="video-controls-left">
+                        <button id="playPauseBtn" class="control-btn" title="播放/暂停">
+                            <svg id="playIcon" viewBox="0 0 24 24" width="24" height="24">
+                                <path fill="currentColor" d="M8 5v14l11-7z"/>
+                            </svg>
+                            <svg id="pauseIcon" viewBox="0 0 24 24" width="24" height="24" style="display:none;">
+                                <path fill="currentColor" d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+                            </svg>
+                        </button>
+                        <button id="liveSyncBtn" class="control-btn" title="同步实时流">
+                            <svg viewBox="0 0 24 24" width="24" height="24">
+                                <path fill="currentColor" d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-8 8s3.57 8 8 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+                            </svg>
+                        </button>
+                    </div>
                     <div class="video-controls-right">
                         <div class="fs-speed-control" title="播放速度">
                             <input type="range" id="fsPlaybackSpeedSlider" class="speed-slider fs-speed-slider" min="0" max="9" step="1" value="0" aria-label="播放速度（全屏）">
                             <span id="fsPlaybackSpeedValue" class="speed-value">1x</span>
                             <button type="button" id="fsSpeedResetBtn" class="speed-reset" title="重置为 1x">重置</button>
+                        </div>
+                        <div class="volume-control" title="音量">
+                            <button id="volumeBtn" class="control-btn volume-btn" title="静音/取消静音">
+                                <svg id="volumeIcon" viewBox="0 0 24 24" width="24" height="24">
+                                    <path fill="currentColor" d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05A4.5 4.5 0 0 0 16.5 12zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+                                </svg>
+                                <svg id="volumeMuteIcon" viewBox="0 0 24 24" width="24" height="24" style="display:none;">
+                                    <path fill="currentColor" d="M16.5 12A4.5 4.5 0 0 0 14 7.97v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51A8.796 8.796 0 0 0 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06a8.99 8.99 0 0 0 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>
+                                </svg>
+                            </button>
+                            <input type="range" id="volumeSlider" class="volume-slider" min="0" max="100" step="1" value="100" aria-label="音量">
                         </div>
                         <button id="fullscreenBtn" class="control-btn" title="全屏">
                             <svg viewBox="0 0 24 24" width="24" height="24">
@@ -139,7 +183,7 @@
                 </div>
             </div>
         </div>
-        
+
         <div class="timeline-container" id="timelineContainer">
             <div class="timeline-header">
                 <div class="timeline-title-wrap">
@@ -198,7 +242,14 @@
                             <span>选择包含摄像头录像的本地文件夹</span>
                         </div>
                     </div>
-                    <input type="text" id="videoBasePath" placeholder="例如: X:\xiaomi_camera_videos">
+                    <div class="video-path-input-wrap">
+                        <input type="text" id="videoBasePath" placeholder="例如: X:\xiaomi_camera_videos" readonly>
+                        <button type="button" id="videoBasePathBrowseBtn" class="browse-btn" title="选择文件夹">
+                            <svg viewBox="0 0 24 24" width="18" height="18">
+                                <path fill="currentColor" d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
+                            </svg>
+                        </button>
+                    </div>
                     <p class="setting-hint">保存后立即生效，自动重新加载视频列表</p>
                 </div>
 
@@ -230,6 +281,38 @@
                         </label>
                     </div>
                     <p class="setting-hint">保存后立即生效</p>
+                </div>
+
+                <div class="setting-item" id="xiaomiQrSetting">
+                    <div class="setting-card-head">
+                        <span class="setting-card-icon">
+                            <svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true">
+                                <rect x="3" y="3" width="7" height="7" rx="1.5" fill="currentColor"/>
+                                <rect x="14" y="3" width="7" height="7" rx="1.5" fill="currentColor"/>
+                                <rect x="3" y="14" width="7" height="7" rx="1.5" fill="currentColor"/>
+                                <path d="M14 14h3v3h-3z" fill="currentColor" opacity=".45"/>
+                                <path d="M18 14h3v3h-3z" fill="currentColor" opacity=".45"/>
+                            </svg>
+                        </span>
+                        <div class="setting-card-copy">
+                            <label>小米账号（实时预览）</label>
+                            <span>扫码登录后摄像头可供实时预览</span>
+                        </div>
+                        <span class="xiaomi-qr-state" id="xiaomiQrState" data-state="idle">未登录</span>
+                    </div>
+                    <div class="xiaomi-qr-body">
+                        <div class="xiaomi-qr-code-wrap" id="xiaomiQrCodeWrap" style="display:none;">
+                            <img id="xiaomiQrImg" alt="小米账号登录二维码">
+                        </div>
+                        <p class="xiaomi-qr-msg" id="xiaomiQrMsg">使用米家 App / 小米手机扫码登录，凭据仅保存在本地，不经过本程序服务器。</p>
+                        <div class="xiaomi-qr-actions">
+                            <button type="button" class="xiaomi-qr-btn xiaomi-qr-primary" id="xiaomiQrStartBtn">获取二维码</button>
+                            <button type="button" class="xiaomi-qr-btn" id="xiaomiQrCancelBtn" style="display:none;">取消</button>
+                            <button type="button" class="xiaomi-qr-btn" id="xiaomiQrSyncBtn" title="重新拉取该账号下的摄像头并刷新列表">同步摄像头</button>
+                            <button type="button" class="xiaomi-qr-btn xiaomi-qr-danger" id="xiaomiQrClearBtn">清除账号</button>
+                        </div>
+                    </div>
+                    <p class="setting-hint">米家 App → 我的 → 扫码登录</p>
                 </div>
             </div>
             <div class="settings-modal-footer">

@@ -4,3 +4,7 @@ dist/
 .trae/
 node_modules/
 build-log.txt
+resources/go2rtc.exe
+data/
+go2rtc.yaml
+credentials.json

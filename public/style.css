@@ -336,6 +336,21 @@ header {
     color-scheme: dark;
 }
 
+/* 查看模式按钮组（控件栏内），复用设置面板的分段单选样式并贴合控件栏高度 */
+.view-mode-seg {
+    align-self: center;
+    height: 38px;
+    padding: 3px;
+}
+
+.view-mode-seg .segment span {
+    display: inline-flex;
+    align-items: center;
+    height: 30px;
+    padding: 0 16px;
+    font-size: 12.5px;
+}
+
 .control-group input:hover {
     border-color: rgba(10, 132, 255, 0.6);
     background-color: rgba(10, 132, 255, 0.18);
@@ -347,6 +362,88 @@ header {
     background-color: rgba(10, 132, 255, 0.15);
     box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
+
+.date-picker-control {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    min-width: 142px;
+    height: 38px;
+    padding: 0 12px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 11px;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text);
+    cursor: pointer;
+    outline: none;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 4px 12px rgba(0, 0, 0, 0.28);
+    transition: border-color 0.25s var(--ease), box-shadow 0.25s, transform 0.25s var(--ease-spring), background-color 0.25s;
+}
+
+#dateGroup {
+    position: relative;
+}
+
+.date-picker-control span {
+    font-size: 13px;
+    font-family: var(--mono);
+    white-space: nowrap;
+}
+
+.date-picker-control svg {
+    width: 16px;
+    height: 16px;
+    color: var(--text-dim);
+    flex: 0 0 auto;
+}
+
+#dateSelect {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.date-picker-popover {
+    position: absolute;
+    z-index: 30;
+    top: calc(100% + 8px);
+    left: 78px;
+    width: 276px;
+    padding: 14px;
+    border: 1px solid var(--glass-border);
+    border-radius: 14px;
+    background: var(--glass-strong);
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(18px);
+}
+
+.date-picker-popover[hidden] { display: none; }
+.date-picker-header,
+.date-picker-weekdays,
+.date-picker-days { display: grid; grid-template-columns: repeat(7, 1fr); align-items: center; gap: 4px; }
+.date-picker-header { grid-template-columns: 32px 1fr 32px; margin-bottom: 10px; text-align: center; }
+.date-picker-header strong { font: 600 13px var(--disp); }
+.date-picker-nav { border: 0; background: transparent; color: var(--text-dim); font-size: 23px; cursor: pointer; border-radius: 7px; }
+.date-picker-nav:hover { background: var(--accent-soft); color: var(--text); }
+.date-picker-weekdays { margin-bottom: 5px; color: var(--text-mute); font: 11px var(--disp); text-align: center; }
+.date-picker-day { height: 30px; border: 0; border-radius: 8px; background: transparent; color: var(--text-dim); font: 12px var(--mono); cursor: pointer; }
+.date-picker-day:hover { background: rgba(10, 132, 255, 0.2); color: var(--text); }
+.date-picker-day.other-month { color: rgba(255, 255, 255, 0.22); }
+.date-picker-day.has-video { color: #fff; font-weight: 700; background: rgba(48, 209, 88, 0.2); box-shadow: inset 0 -2px 0 var(--ok); }
+.date-picker-day.selected { background: var(--accent); color: #fff; box-shadow: 0 4px 12px rgba(10, 132, 255, 0.35); }
+.date-picker-day.selected.has-video { box-shadow: 0 4px 12px rgba(10, 132, 255, 0.35), inset 0 -2px 0 #fff; }
+
+.date-picker-control:hover,
+.date-picker-control:focus-within {
+    border-color: rgba(10, 132, 255, 0.7);
+    background-color: rgba(10, 132, 255, 0.16);
+    box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    transform: translateY(-1px);
+}
+
 
 /* ===================== 自定义下拉菜单 ===================== */
 
@@ -369,7 +466,8 @@ header {
     display: inline-flex;
     align-items: center;
     gap: 10px;
-    padding: 9px 14px;
+    height: 38px;
+    padding: 0 14px;
     min-width: 120px;
     justify-content: space-between;
     border: 1px solid rgba(255, 255, 255, 0.14);
@@ -775,6 +873,13 @@ body.fullscreen-mode.timeline-shown .video-controls {
     bottom: 132px;
 }
 
+/* 控制栏左侧组合：播放/暂停 + 实时同步 */
+.video-controls-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
 /* 全屏控制栏右侧组合：速度控制紧贴全屏按钮左侧 */
 .video-controls-right {
     display: flex;
@@ -788,7 +893,8 @@ body.fullscreen-mode.timeline-shown .video-controls {
     display: none;
     align-items: center;
     gap: 10px;
-    padding: 7px 14px;
+    height: 44px;
+    padding: 0 14px;
     border: 1px solid rgba(255, 255, 255, 0.16);
     border-radius: 13px;
     background: rgba(20, 22, 30, 0.6);
@@ -800,6 +906,28 @@ body.fullscreen-mode.timeline-shown .video-controls {
 
 body.fullscreen-mode .fs-speed-control {
     display: flex;
+}
+
+/* 音量控制：喇叭按钮 + 滑块，无边框无背景 */
+.volume-control {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    pointer-events: auto;
+}
+
+.volume-btn {
+    width: 44px;
+    height: 44px;
+    border: none;
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: none;
+}
+
+.volume-slider {
+    width: 90px;
 }
 
 .fs-speed-slider {
@@ -1456,6 +1584,7 @@ body.fullscreen-mode .timeline-hint {
 }
 
 .setting-item input {
+    width: 100%;
     padding: 12px 14px;
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 11px;
@@ -1476,6 +1605,136 @@ body.fullscreen-mode .timeline-hint {
     color: var(--text-mute);
     font-size: 12px;
     margin: 0;
+}
+
+/* 视频目录输入框容器：输入框 + 浏览按钮 */
+.video-path-input-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+.video-path-input-wrap input {
+    padding-right: 44px;
+}
+.browse-btn {
+    position: absolute;
+    right: 6px;
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-dim);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.18s;
+}
+.browse-btn:hover {
+    background: var(--accent-soft);
+    color: var(--text);
+}
+
+/* ===================== 小米账号扫码登录卡片 ===================== */
+
+.xiaomi-qr-state {
+    margin-left: auto;
+    flex: 0 0 auto;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-family: var(--mono);
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-dim);
+}
+.xiaomi-qr-state[data-state="logged"] {
+    color: #7ee0a3;
+    border-color: rgba(126, 224, 163, 0.4);
+    background: rgba(126, 224, 163, 0.1);
+}
+.xiaomi-qr-state[data-state="waiting"] {
+    color: #ffd479;
+    border-color: rgba(255, 212, 121, 0.4);
+    background: rgba(255, 212, 121, 0.1);
+}
+.xiaomi-qr-state[data-state="error"] {
+    color: #ff8f86;
+    border-color: rgba(255, 143, 134, 0.4);
+    background: rgba(255, 143, 134, 0.1);
+}
+
+.xiaomi-qr-body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 6px 0 2px;
+}
+
+.xiaomi-qr-code-wrap {
+    width: 200px;
+    height: 200px;
+    padding: 8px;
+    border-radius: 14px;
+    background: #fff; /* 二维码白色底，保证可扫 */
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+}
+.xiaomi-qr-code-wrap img {
+    width: 100%;
+    height: 100%;
+    display: block;
+    border-radius: 8px;
+    object-fit: contain;
+}
+
+.xiaomi-qr-msg {
+    margin: 0;
+    color: var(--text-mute);
+    font-size: 12.5px;
+    text-align: center;
+    line-height: 1.5;
+}
+
+.xiaomi-qr-actions {
+    display: flex;
+    gap: 10px;
+}
+.xiaomi-qr-btn {
+    padding: 8px 20px;
+    border: 1px solid var(--line);
+    border-radius: 11px;
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
+    font-family: var(--disp);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.xiaomi-qr-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    transform: translateY(-1px);
+}
+.xiaomi-qr-primary {
+    border: none;
+    background: linear-gradient(135deg, var(--accent), var(--accent-deep));
+    color: #fff;
+}
+.xiaomi-qr-primary:hover {
+    box-shadow: 0 8px 20px rgba(10, 132, 255, 0.35);
+}
+.xiaomi-qr-danger {
+    color: var(--danger);
+}
+.xiaomi-qr-danger:hover {
+    background: rgba(255, 69, 58, 0.14);
+}
+.xiaomi-qr-btn:disabled {
+    opacity: 0.6;
+    cursor: wait;
+    transform: none;
 }
 
 .settings-modal-footer {
@@ -1716,6 +1975,46 @@ body.fullscreen-mode .timeline-container.visible:hover {
 
 .timeline-container:hover .timeline {
     box-shadow: inset 0 2px 16px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(10, 132, 255, 0.15);
+}
+
+/* ===================== 实时预览层（复用录像播放器容器与控件） ===================== */
+
+/* live 模式：videoContainer 加 live-active，隐藏录像画面层、显示实时 iframe */
+#livePreviewFrame {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    border: none;
+    background: #000;
+    /* 不用 display:none —— 会断开 iframe 内 WebRTC 连接，切回直播要重新握手 5-10 秒。
+       改用 opacity:0 保持 iframe 渲染，video 后台继续播放、连接不断 */
+    opacity: 0;
+    pointer-events: none;
+}
+.video-container.live-active #livePreviewFrame {
+    opacity: 1;
+    pointer-events: auto;
+}
+.video-container.live-active .video-layer {
+    visibility: hidden;
+}
+
+/* 同步按钮：仅实时预览模式显示（播放按钮右侧） */
+#liveSyncBtn {
+    display: none;
+}
+.video-container.live-active #liveSyncBtn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+#liveSyncBtn.spinning svg {
+    animation: live-sync-spin 0.8s linear infinite;
+}
+@keyframes live-sync-spin {
+    to { transform: rotate(360deg); }
 }
 
 /* ===================== 响应式 ===================== */

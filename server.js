@@ -2,15 +2,25 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const fsp = fs.promises;
+const { Go2rtcManager } = require('./src/go2rtc-process');
+const { createLiveProxy } = require('./src/live-proxy');
 
 const app = express();
 
 const VIDEO_DURATION_MS = 60000; // 单个视频时长：1 分钟
 const DATA_DIR = process.env.MI_VIDEO_VIEWER_DATA_PATH || __dirname;
+console.log('[server] DATA_DIR =', DATA_DIR);
 const CONFIG_PATH = path.join(DATA_DIR, 'config.json');
 const DEFAULT_CONFIG = {
     videoBasePath: 'X:\\xiaomi_camera_videos',
-    port: 3000
+    port: 3000,
+    live: {
+        enabled: false,
+        go2rtc: {
+            baseUrl: 'http://127.0.0.1:1984',
+            exePath: ''
+        }
+    }
 };
 
 // ---------- 配置管理 ----------
@@ -289,6 +299,271 @@ app.get('/video/:camera/:folder/:filename', (req, res) => {
     }
 });
 
+// ---------- 实时预览通道（go2rtc） ----------
+// 配置见 config.json 的 live 段；小米账号登录由用户在 go2rtc WebUI 完成一次即可
+
+const { CredentialStore } = require('./src/safe-store');
+const credentialStore = new CredentialStore({ dataDir: DATA_DIR });
+
+const { createLiveWarmup } = require('./src/live-warmup');
+
+const go2rtc = new Go2rtcManager({
+    dataDir: DATA_DIR,
+    getLiveConfig: () => config.live || {},
+    credentialStore,
+    // go2rtc 就绪（含重启后）→ 自动预热所有摄像头主流，实时预览进入即秒开
+    onReady: () => warmupAllStreams()
+});
+const liveProxy = createLiveProxy({
+    getBaseUrl: () => go2rtc.getBaseUrl(),
+    // go2rtc 可用（本机 running 或复用外部 external 实例）时转发，否则给友好 503
+    isReady: () => ['running', 'external'].includes(go2rtc.getStatus().status)
+});
+// 流预热管理器：对摄像头主流保持 go2rtc 消费者连接，避免首次进入实时预览
+// 等待小米云握手 + P2P 建连的 5~10 秒（详见 src/live-warmup.js）
+const liveWarmup = createLiveWarmup({
+    getBaseUrl: () => go2rtc.getBaseUrl(),
+    isReady: () => ['running', 'external'].includes(go2rtc.getStatus().status)
+});
+
+const { XiaomiQrLogin } = require('./src/xiaomi-qr');
+const xiaomiQr = new XiaomiQrLogin();
+const XiaomiCloud = require('./src/xiaomi-cloud').XiaomiCloud;
+const xiaomiCloud = new XiaomiCloud();
+
+/**
+ * 读取已登录账号（userId + 解密后的 token）。
+ * token 优先从 credentialStore(safeStorage) 取；yaml 里的明文作为兼容/迁移来源。
+ * 若 yaml 中有未被 credentials 覆盖的明文，尝试迁移加密并返回。
+ */
+async function readXiaomiAccounts(yamlPath) {
+    // 1) 从 yaml 提取 userId（不受 token 是占位符还是明文影响）
+    let content = '';
+    try { content = fs.readFileSync(yamlPath, 'utf8'); } catch { return []; }
+    const userIds = [];
+    const lines = content.replace(/\r\n/g, '\n').split('\n');
+    let inXiaomi = false;
+    for (const line of lines) {
+        const t = line.trim();
+        if (t === 'xiaomi:') { inXiaomi = true; continue; }
+        if (inXiaomi && t && !t.startsWith('#') && (!/^\s/.test(line))) break;
+        if (inXiaomi) {
+            const m = /^"?([^":]+)"?\s*:\s*"?([^"]+)"?\s*$/.exec(t);
+            if (m) userIds.push({ userId: m[1].replace(/"/g, ''), yamlToken: m[2] });
+        }
+    }
+
+    const accounts = [];
+    for (const { userId, yamlToken } of userIds) {
+        let passToken = null;
+        // a) 优先 safe-store
+        if (credentialStore) {
+            passToken = await credentialStore.get(userId).catch(() => null);
+        }
+        // b) 迁移：yaml 仍明文（非占位符）则加密存储，并改 yaml 为占位符
+        if (!passToken && yamlToken && !yamlToken.includes('XIAOMI_PASS_')) {
+            passToken = yamlToken;
+            try {
+                await xiaomiQr.saveTokenToYaml(yamlPath, userId, passToken, { store: credentialStore, securityFallback: true });
+            } catch (err) {
+                console.warn('[safe-store] 明文迁移失败（继续用明文）:', err.message);
+            }
+        }
+        if (passToken) accounts.push({ userId, passToken });
+    }
+    return accounts;
+}
+
+// ---------- 小米账号二维码登录 ----------
+// 建立会话：返回二维码图片 URL 与轮询地址，前端 <img> 直接显示
+
+app.get('/api/live/qr/start', async (req, res) => {
+    try {
+        const session = await xiaomiQr.startSession();
+        res.json({ success: true, session });
+    } catch (err) {
+        console.error('[xiaomi-qr] 创建会话失败:', err.message);
+        res.status(502).json({ error: `二维码会话创建失败: ${err.message}`, code: err.code });
+    }
+});
+
+// 轮询等待扫码：成功后写入 go2rtc.yaml 并重启 go2rtc
+app.get('/api/live/qr/poll', async (req, res) => {
+    const lp = String(req.query.lp || '');
+    if (!lp) return res.status(400).json({ error: '缺少 lp 参数' });
+
+    try {
+        const { userId, passToken } = await xiaomiQr.pollForLogin(lp);
+        await xiaomiQr.saveTokenToYaml(go2rtc.yamlPath, userId, passToken, {
+            store: credentialStore,
+            securityFallback: true // safeStorage 不可用时降级明文（功能可用），并记录日志
+        });
+
+        // 自动拉取该账号摄像头并写入 streams（失败不阻断登录，降级即可）
+        let cameras = [];
+        try {
+            cameras = await xiaomiCloud.getCameras(xiaomiQr.region, userId, passToken);
+            if (cameras.length) {
+                await xiaomiCloud.saveStreamsToYaml(go2rtc.yamlPath, xiaomiQr.region, userId, cameras);
+            }
+            console.log(`[xiaomi-cloud] 账号 ${userId} 下发现 ${cameras.length} 个摄像头`);
+        } catch (cloudErr) {
+            console.warn('[xiaomi-cloud] 拉取摄像头列表失败（不影响账号写入）:', cloudErr.message);
+        }
+
+        // 配置变更 → 重启 go2rtc 使新账号生效（不阻塞响应）
+        go2rtc.restart().catch(e => console.error('[xiaomi-qr] 重启 go2rtc 失败:', e.message));
+        res.json({
+            success: true,
+            account: { userId },
+            cameras: cameras.length,
+            message: cameras.length
+                ? `已写入 go2rtc.yaml（${cameras.length} 个摄像头），正在重启 go2rtc`
+                : '已写入 go2rtc.yaml，但未发现摄像头，正在重启 go2rtc'
+        });
+    } catch (err) {
+        console.error('[xiaomi-qr] 轮询失败:', err.message);
+        // 用 409 表达业务性失败（二维码过期/取消），前端据此提示
+        const status = (err.code === 'TIMEOUT' || err.code === 'EXPIRED') ? 409 : 502;
+        res.status(status).json({ error: err.message, code: err.code });
+    }
+});
+
+// go2rtc 状态查询（是否运行 / 复用外部实例 / 失败原因）
+app.get('/api/live/status', (req, res) => {
+    res.json(go2rtc.getStatus());
+});
+
+// 实时预览流列表：从 go2rtc /api/streams 拉取，过滤 xiaomi 源摄像头
+// 供前端将实时计入摄像头下拉联动（不依赖本地录像目录）
+app.get('/api/live/cameras', async (req, res) => {
+    try {
+        res.json({ streams: await fetchXiaomiMainStreams() });
+    } catch (err) {
+        console.warn('[live/cameras] 拉取 go2rtc 实时流失败:', err.message);
+        res.json({ streams: [], error: err.message });
+    }
+});
+
+/**
+ * 拉取 go2rtc 流列表并筛选小米摄像头主流（过滤 _sub 标清子流）。
+ * go2rtc /api/streams 返回 { 流名: { producers: [{url}], consumers } } 形式的对象 map。
+ */
+async function fetchXiaomiMainStreams() {
+    const http = require('http');
+    const { URL } = require('url');
+    const baseUrl = go2rtc.getBaseUrl();
+    const resp = await new Promise((resolve, reject) => {
+        const url = new URL(`${baseUrl}/api/streams`);
+        let data = '';
+        const req = http.get(url, r => {
+            if (r.statusCode !== 200) { r.resume(); return reject(new Error(`go2rtc 返回 ${r.statusCode}`)); }
+            r.on('data', c => data += c);
+            r.on('end', () => resolve(data));
+        });
+        req.on('error', reject);
+    });
+    const streams = JSON.parse(resp);
+    const xiaomi = [];
+    if (streams && typeof streams === 'object' && !Array.isArray(streams)) {
+        for (const [name, info] of Object.entries(streams)) {
+            const producers = (info && Array.isArray(info.producers)) ? info.producers : [];
+            const isXiaomi = producers.some(p => p && p.url && /^xiaomi:/i.test(p.url));
+            const isSub = /_sub$/.test(name)
+                || producers.some(p => p && p.url && /^xiaomi:/i.test(p.url) && /subtype=/.test(p.url));
+            if (isXiaomi && !isSub) xiaomi.push(name);
+        }
+    }
+    return xiaomi;
+}
+
+/** go2rtc 就绪后自动预热所有小米主流（config.json 的 live.warmup = false 可关闭） */
+async function warmupAllStreams() {
+    if (!config.live || config.live.warmup === false) return;
+    await new Promise(r => setTimeout(r, 200)); // 稍等一拍，确保 go2rtc 完全就绪
+    try {
+        const streams = await fetchXiaomiMainStreams();
+        if (!streams.length) return;
+        streams.forEach(s => liveWarmup.ensure(s));
+        console.log(`[live-warmup] 已为 ${streams.length} 个摄像头主流启动预热连接`);
+    } catch (err) {
+        console.warn('[live-warmup] 拉取流列表失败，将由前端进入实时预览时补偿预热:', err.message);
+    }
+}
+
+// 预热状态查询 / 手动预热（幂等）：前端进入实时预览时补偿调用，确保连接已建立
+app.get('/api/live/warmup/status', (req, res) => {
+    res.json({ warmups: liveWarmup.status() });
+});
+app.post('/api/live/warmup', (req, res) => {
+    const body = req.body || {};
+    const streams = Array.isArray(body.streams)
+        ? body.streams
+        : (body.stream ? [body.stream] : []);
+    streams.forEach(s => liveWarmup.ensure(s));
+    res.json({ success: true, warmups: liveWarmup.status() });
+});
+
+// 已登录小米账号读取：从 safe-store / go2rtc.yaml 解析，供前端刷新后保持"已登录"状态
+app.get('/api/live/token', async (req, res) => {
+    try {
+        const accounts = await readXiaomiAccounts(go2rtc.yamlPath);
+        res.json({ success: true, accounts: accounts.map(({ userId }) => ({ userId })) });
+    } catch (err) {
+        console.warn('[live/token] 读取账号状态失败:', err.message);
+        res.json({ success: false, accounts: [], error: err.message });
+    }
+});
+
+app.delete('/api/live/account', async (req, res) => {
+    try {
+        const accounts = await readXiaomiAccounts(go2rtc.yamlPath);
+        const userId = String((req.body && req.body.userId) || (accounts[0] && accounts[0].userId) || '').trim();
+        if (!userId) return res.status(404).json({ error: '当前没有已保存的小米账号' });
+        await credentialStore.remove(userId);
+        await xiaomiQr.removeAccountFromYaml(go2rtc.yamlPath, userId);
+        const status = await go2rtc.restart();
+        res.json({ success: true, userId, status });
+    } catch (err) {
+        console.error('[live/account] 清除账号失败:', err.message);
+        res.status(500).json({ error: `清除账号失败: ${err.message}` });
+    }
+});
+
+// 手动重拉摄像头列表并写入 streams（登录后没生成列表时用，无需重新扫码）
+app.post('/api/live/sync-cameras', async (req, res) => {
+    const accounts = await readXiaomiAccounts(go2rtc.yamlPath);
+    if (accounts.length === 0) {
+        return res.status(400).json({ error: '尚未登录小米账号，请先在设置中扫码登录' });
+    }
+    try {
+        // 取第一个账号
+        const { userId, passToken } = accounts[0];
+        const cameras = await xiaomiCloud.getCameras(xiaomiQr.region, userId, passToken);
+        if (cameras.length) {
+            await xiaomiCloud.saveStreamsToYaml(go2rtc.yamlPath, xiaomiQr.region, userId, cameras);
+        }
+        go2rtc.restart().catch(e => console.error('[sync-cameras] 重启 go2rtc 失败:', e.message));
+        res.json({ success: true, cameras: cameras.length, message: `同步 ${cameras.length} 个摄像头` });
+    } catch (err) {
+        console.warn('[sync-cameras] 失败:', err.message);
+        res.status(502).json({ error: `同步摄像头失败: ${err.message}` });
+    }
+});
+
+// 配置变更后手动重启 go2rtc 子进程
+app.post('/api/live/restart', async (req, res) => {
+    try {
+        const status = await go2rtc.restart();
+        res.json({ success: true, status });
+    } catch (err) {
+        res.status(500).json({ error: `go2rtc 重启失败: ${err.message}` });
+    }
+});
+
+// 其余 /api/live/* 全部反向代理到 go2rtc（REST 与流媒体端点）
+app.use('/api/live', liveProxy.router);
+
 // ---------- 配置接口 ----------
 
 app.get('/api/config', (req, res) => {
@@ -297,8 +572,9 @@ app.get('/api/config', (req, res) => {
 
 app.post('/api/config', (req, res) => {
     const body = req.body || {};
+    const prevConfig = loadConfig();
     const newConfig = {
-        ...loadConfig(),
+        ...prevConfig,
         ...body
     };
 
@@ -323,6 +599,13 @@ app.post('/api/config', (req, res) => {
         // 热更新：内存配置与目录扫描缓存立即生效，无需重启进程
         config.videoBasePath = newConfig.videoBasePath;
         folderScanCache.clear();
+
+        // live 配置变化时重启 go2rtc 子进程（enabled/baseUrl/exePath）
+        if (JSON.stringify(newConfig.live || null) !== JSON.stringify(prevConfig.live || null)) {
+            config.live = newConfig.live;
+            go2rtc.restart().catch(err => console.error('[go2rtc] 重启失败:', err.message));
+        }
+
         res.json({ success: true, config: newConfig });
     } catch (err) {
         res.status(500).json({ error: `保存配置失败: ${err.message}` });
@@ -349,13 +632,21 @@ function startServer(onReady) {
         console.warn(`  请在设置中修改视频目录（保存后立即生效，无需重启）。`);
     }
 
-    return app.listen(PORT, () => {
+    const server = app.listen(PORT, () => {
         console.log('========================================');
         console.log(`  服务器运行在: http://localhost:${PORT}`);
         console.log(`  视频目录:   ${getVideoBasePath()}（设置中修改即时生效）`);
         console.log('========================================');
-        if (onReady) onReady();
+
+        // 实时预览通道：先挂 WebSocket 升级代理，再等待 go2rtc 完成启动探活
+        liveProxy.attachUpgrade(server);
+        go2rtc.autoStart()
+            .catch(err => console.error('[go2rtc] 启动失败:', err.message))
+            .finally(() => {
+                if (onReady) onReady();
+            });
     });
+    return server;
 }
 
 if (require.main === module) {
