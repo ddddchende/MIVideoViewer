@@ -2908,11 +2908,49 @@ elements.dateSelect.addEventListener('change', (e) => {
 });
 
 elements.datePickerControl.addEventListener('click', () => {
+    // 点击切换：已打开则关闭，未打开则打开
+    if (!elements.datePickerPopover.hidden) {
+        elements.datePickerPopover.hidden = true;
+        return;
+    }
     datePickerMonthDate = state.selectedDate
         ? new Date(`${state.selectedDate}T00:00:00`)
         : new Date();
     renderDatePicker();
     elements.datePickerPopover.hidden = false;
+});
+
+/** 应用快捷/格子选择的日期：更新状态与显示，关闭弹窗并刷新视频列表 */
+function applySelectedDate(dateValue) {
+    defaultDateFetchToken++;
+    state.selectedDate = dateValue;
+    elements.dateSelect.value = dateValue;
+    elements.datePickerLabel.textContent = dateValue.replace(/-/g, '/');
+    datePickerMonthDate = new Date(`${dateValue}T00:00:00`);
+    elements.datePickerPopover.hidden = true;
+    if (state.selectedCamera) fetchVideos();
+}
+
+// 快捷按钮：最早（有录像的最早一天）/ 昨天 / 今天
+document.querySelectorAll('.date-picker-quick-btn').forEach(btn => {
+    btn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const quick = btn.dataset.quick;
+        if (quick === 'earliest') {
+            // 取有录像的最早日期；无数据时退回日历当前视图首日
+            if (availableVideoDates.size) {
+                applySelectedDate([...availableVideoDates].sort()[0]);
+            } else {
+                applySelectedDate(formatPickerDate(
+                    datePickerMonthDate.getFullYear(),
+                    datePickerMonthDate.getMonth(), 1));
+            }
+        } else {
+            const d = new Date();
+            if (quick === 'yesterday') d.setDate(d.getDate() - 1);
+            applySelectedDate(formatPickerDate(d.getFullYear(), d.getMonth(), d.getDate()));
+        }
+    });
 });
 
 function formatPickerDate(year, month, day) {

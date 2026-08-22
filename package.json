@@ -1,6 +1,6 @@
 {
   "name": "mi-video-viewer",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "小米摄像头录像查看器",
   "main": "electron-main.js",
   "scripts": {
