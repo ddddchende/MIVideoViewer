@@ -46,7 +46,7 @@
         "portable",
         "zip"
       ],
-      "signAndEditExecutable": false,
+      "signExecutable": false,
       "artifactName": "MI-Video-Viewer-${version}.${ext}"
     },
     "portable": {

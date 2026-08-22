@@ -233,18 +233,20 @@ class Go2rtcManager {
         await fsp.writeFile(this.yamlPath, lines.join('\n'), 'utf8');
     }
 
-    /** 查找 go2rtc.exe：显式配置 → 项目 resources/（开发）→ 打包 extraResources */
+    /** 查找 go2rtc.exe：显式配置 → 打包 extraResources → 项目 resources/（开发） */
     _resolveExe(live) {
         const candidates = [];
         const configured = live.go2rtc && live.go2rtc.exePath;
         if (configured) candidates.push(configured);
-        candidates.push(path.join(__dirname, '..', 'resources', 'go2rtc.exe'));
+        // 打包后：extraResources 在 process.resourcesPath 下（asar 外部，可执行）
         if (process.versions.electron && process.resourcesPath) {
             candidates.push(path.join(process.resourcesPath, 'resources', 'go2rtc.exe'));
         }
+        // 开发模式：项目根 resources/ 目录
+        candidates.push(path.join(__dirname, '..', 'resources', 'go2rtc.exe'));
         for (const p of candidates) {
             try {
-                if (p && fs.existsSync(p)) return p;
+                if (p && fs.existsSync(p) && !p.includes('.asar')) return p;
             } catch { /* 忽略不可访问的路径 */ }
         }
         return null;

@@ -116,6 +116,10 @@ const videoZoom = { scale: 1, tx: 0, ty: 0, active: false }; // tx/ty 为平移�
 /** 当前 contain 模式下画面实际显示尺寸（不含黑边）与容器尺寸 */
 function getContainedContentSize() {
     const rect = elements.videoWrapper.getBoundingClientRect();
+    // 实时预览：iframe 填满整个 wrapper，无黑边，直接返回容器尺寸
+    if (state.viewMode === 'live') {
+        return { w: rect.width, h: rect.height, wrapperW: rect.width, wrapperH: rect.height };
+    }
     const vw = currentPlayer ? currentPlayer.videoWidth : 0;
     const vh = currentPlayer ? currentPlayer.videoHeight : 0;
     if (!vw || !vh || !rect.width || !rect.height) {
@@ -132,13 +136,13 @@ function getCoverScale() {
     return Math.max(wrapperW / w, wrapperH / h);
 }
 
-/** 钳制平移量：缩放后的画面必须完全覆盖容器（每边不留黑边） */
+/** 钳制平移量：画面超出容器时限制不露黑边；未超出时保留鼠标锚点位移 */
 function clampVideoZoomPan() {
     const { w, h, wrapperW, wrapperH } = getContainedContentSize();
     const budgetX = (videoZoom.scale * w - wrapperW) / 2;
     const budgetY = (videoZoom.scale * h - wrapperH) / 2;
-    videoZoom.tx = budgetX > 0 ? Math.max(-budgetX, Math.min(budgetX, videoZoom.tx)) : 0;
-    videoZoom.ty = budgetY > 0 ? Math.max(-budgetY, Math.min(budgetY, videoZoom.ty)) : 0;
+    if (budgetX > 0) videoZoom.tx = Math.max(-budgetX, Math.min(budgetX, videoZoom.tx));
+    if (budgetY > 0) videoZoom.ty = Math.max(-budgetY, Math.min(budgetY, videoZoom.ty));
 }
 
 function applyVideoZoom() {
@@ -152,6 +156,15 @@ function applyVideoZoom() {
         v.style.transformOrigin = '50% 50%';
         v.style.transform = `translate(${videoZoom.tx}px, ${videoZoom.ty}px) scale(${videoZoom.scale})`;
     });
+    // 实时预览 iframe 同步应用缩放变换
+    if (elements.livePreviewFrame) {
+        if (!videoZoom.active) {
+            elements.livePreviewFrame.style.transform = '';
+        } else {
+            elements.livePreviewFrame.style.transformOrigin = '50% 50%';
+            elements.livePreviewFrame.style.transform = `translate(${videoZoom.tx}px, ${videoZoom.ty}px) scale(${videoZoom.scale})`;
+        }
+    }
 }
 
 function resetVideoZoom() {
@@ -162,11 +175,9 @@ function resetVideoZoom() {
     applyVideoZoom();
 }
 
-/** 布局/视频尺寸变化后重校准：保证仍铺满容器 */
+/** 布局/视频尺寸变化后重校准 */
 function refreshVideoZoomLayout() {
     if (!videoZoom.active) return;
-    const cover = getCoverScale();
-    if (videoZoom.scale < cover) videoZoom.scale = cover;
     clampVideoZoomPan();
     applyVideoZoom();
 }
@@ -175,8 +186,7 @@ function refreshVideoZoomLayout() {
  * 滚轮缩放画面：以鼠标为锚点，缩放前后鼠标下的画面内容不动。
  * 锚点公式：画面点 q 满足 M = C + s0*(q-C) + t0，缩放后要求仍落在 M，
  * 解得 t1 = (M-C) - (s1/s0)*((M-C) - t0)，对任意位置（含边缘）精确成立。
- * 倍数范围：原始 1x（contain，含原始黑边）↔ [铺满倍数, 8x]（激活区间，永不露黑边）；
- * 缩小跨过铺满倍数时直接还原到原始大小
+ * 倍数范围：1x（原始 contain）↔ 8x；缩小到 1x 还原原始显示
  */
 function handleVideoWheel(e) {
     if (e.target.closest('.video-controls')) return;
@@ -191,28 +201,23 @@ function handleVideoWheel(e) {
     const oldScale = videoZoom.scale;
     const factor = Math.pow(2, -e.deltaY * 0.002);
     const newScale = Math.min(VIDEO_ZOOM_MAX, Math.max(1, oldScale * factor));
-    const cover = getCoverScale();
 
-    // 缩出激活区间（≤1x 或跨过铺满倍数）：还原原始 contain 显示
-    if (newScale <= 1 || (videoZoom.active && newScale < cover)) {
+    if (newScale <= 1) {
         if (videoZoom.active) resetVideoZoom();
         return;
     }
 
-    // 生效倍数不低于铺满容器所需：激活区间内画面始终盖住容器，不露黑边
-    const effective = Math.max(newScale, cover);
-    if (effective === oldScale && videoZoom.active) return;
+    if (newScale === oldScale && videoZoom.active) return;
 
-    const k = effective / oldScale;
+    const k = newScale / oldScale;
     videoZoom.tx = (mx - cx) - k * ((mx - cx) - videoZoom.tx);
     videoZoom.ty = (my - cy) - k * ((my - cy) - videoZoom.ty);
-    videoZoom.scale = effective;
+    videoZoom.scale = newScale;
     videoZoom.active = true;
-    clampVideoZoomPan();
     applyVideoZoom();
 }
 
-/** 缩放状态下拖拽平移画面（跟手，钳制在铺满范围内） */
+/** 缩放状态下拖拽平移画面（跟手，不钳制） */
 function handleVideoMouseDown(e) {
     if (e.button !== 0 || !videoZoom.active) return;
     e.preventDefault();
@@ -225,7 +230,6 @@ function handleVideoMouseDown(e) {
         videoZoom.ty += ev.clientY - lastY;
         lastX = ev.clientX;
         lastY = ev.clientY;
-        clampVideoZoomPan();
         applyVideoZoom();
     };
     const onUp = () => {
@@ -900,6 +904,7 @@ function setupDoubleClick() {
     // 双击视频：已缩放时还原缩放（避免误触全屏），未缩放时切换全屏（原有行为）
     elements.videoWrapper.addEventListener('dblclick', (e) => {
         if (e.target.closest('.video-controls')) return;
+        e.preventDefault();
         if (videoZoom.active) {
             resetVideoZoom();
         } else {
@@ -943,18 +948,20 @@ function handleFullscreenMouseMove(e) {
     clearTimeout(fullscreenHideTimeout);
     document.body.classList.remove('fullscreen-cursor-hidden');
 
-    // 移动即显示视频控制按钮；落入底部触发区时同时显示时间线
+    // 移动即显示视频控制按钮；落入底部触发区时同时显示时间线（实时预览无时间线，跳过）
     if (videoControls) videoControls.classList.add('controls-shown');
-    const windowHeight = window.innerHeight;
-    // 触发区上沿 = 控制台在"时间线弹出"位置的顶部（按钮实际可点击区域之上），
-    // 保证鼠标向按钮移动时不因控制台上移而点空
-    const controlsTop = windowHeight - 176;
-    if (e && e.clientY > controlsTop) {
-        elements.timelineContainer.classList.add('visible');
-        document.body.classList.add('timeline-shown');
-    } else {
-        elements.timelineContainer.classList.remove('visible');
-        document.body.classList.remove('timeline-shown');
+    if (state.viewMode !== 'live') {
+        const windowHeight = window.innerHeight;
+        // 触发区上沿 = 控制台在"时间线弹出"位置的顶部（按钮实际可点击区域之上），
+        // 保证鼠标向按钮移动时不因控制台上移而点空
+        const controlsTop = windowHeight - 176;
+        if (e && e.clientY > controlsTop) {
+            elements.timelineContainer.classList.add('visible');
+            document.body.classList.add('timeline-shown');
+        } else {
+            elements.timelineContainer.classList.remove('visible');
+            document.body.classList.remove('timeline-shown');
+        }
     }
 
     // 鼠标静止一段时间后自动隐藏视频按钮与时间线；
@@ -2657,6 +2664,20 @@ function setupLivePlayerBridge() {
     try {
         const doc = elements.livePreviewFrame.contentDocument;
         if (!doc) return;
+
+        // 注入 CSS：隐藏 go2rtc 播放器的原生 UI（右上角 RTC/MSE 等状态指示器）
+        if (!doc.getElementById('mi-live-hide-ui')) {
+            const style = doc.createElement('style');
+            style.id = 'mi-live-hide-ui';
+            style.textContent = `
+                .info, .mode, .status { display: none !important; }
+                body { background: #000 !important; margin: 0 !important; }
+                video { background: #000 !important; }
+                video-stream { width: 100% !important; height: 100% !important; }
+            `;
+            (doc.head || doc.documentElement).appendChild(style);
+        }
+
         const apply = () => {
             const video = doc.querySelector('video');
             if (!video) return;

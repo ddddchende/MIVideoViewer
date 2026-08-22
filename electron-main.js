@@ -27,9 +27,7 @@ function saveWindowState(win) {
 }
 
 function getDataPath() {
-    if (process.env.PORTABLE_EXECUTABLE_DIR) {
-        return path.join(process.env.PORTABLE_EXECUTABLE_DIR, 'data');
-    }
+    // 统一数据目录：单体 EXE 与 ZIP 版共用 userData，保证登录凭据互通
     return path.join(app.getPath('userData'), 'data');
 }
 
@@ -81,8 +79,10 @@ function createWindow() {
     const port = Number(config.port) || 3000;
     server = startServer(() => win.loadURL(`http://localhost:${port}`));
 
-    win.on('closed', () => {
+    win.on('close', () => {
         saveWindowState(win);
+    });
+    win.on('closed', () => {
         if (server) server.close();
     });
 }
