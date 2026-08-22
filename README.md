@@ -1,8 +1,8 @@
 # 小米摄像头录像查看器
 
-> 一个漂亮的本地录像时间线查看器，让长达数万分钟的摄像头录像一屏尽览。
+> 一个漂亮的本地录像时间线查看器，让长达数万分钟的摄像头录像一屏尽览，并支持实时预览。
 
-深色玻璃拟态界面，支持时间线缩放/平移、悬停预览、倍速播放，可打包为 Windows 绿色版应用直接双击使用。
+深色玻璃拟态界面，支持时间线缩放/平移、悬停预览、倍速播放、实时预览，可打包为 Windows 绿色版应用直接双击使用。
 
 ![应用截图](README/ScreenShot_2026-08-19_174244_676.png)
 
@@ -16,6 +16,11 @@
 - **倍速播放**：滑块 + 快捷按钮（1x / 2x / 4x / 8x / 16x）
 - **无缝切换**：视频切换无黑屏、无跳动
 - **全屏模式**：一键进入沉浸式全屏时间线
+- **实时预览**：接入 go2rtc，扫码登录小米账号后观看摄像头直播画面
+  - 直播秒开：后台自动预热主流连接，进入即出画面
+  - 滚轮缩放 / 双击全屏 / 拖拽平移
+  - 凭据安全存储：token 经系统级加密（DPAPI / Keychain）保存，配置中仅存占位符
+- **日期快捷选择**：最早 / 昨天 / 今天一键切换
 - **可配置视频目录**：网页内设置视频存储路径，并自动持久化
 
 ## 🚀 快速开始
@@ -25,8 +30,8 @@
 直接运行打包产物，无需安装任何环境：
 
 ```text
-dist/MI-Video-Viewer-Portable-1.0.0.exe   # 单文件便携版
-dist/MI-Video-Viewer-1.0.0.zip            # 目录绿色版
+dist/MI-Video-Viewer-Portable-1.2.0.exe   # 单文件便携版
+dist/MI-Video-Viewer-1.2.0.zip            # 目录绿色版
 ```
 
 首次运行后，在应用右上角设置中选择你的视频目录即可。
@@ -46,6 +51,8 @@ npm start
 npm run electron
 ```
 
+> 实时预览需要 go2rtc.exe：从 [go2rtc releases](https://github.com/AlexxIT/go2rtc/releases) 下载后放入 `resources/` 目录（打包版已内置）。
+
 ## 🛠️ 打包为 Windows 应用
 
 ```bash
@@ -59,8 +66,9 @@ npm run build:win
 
 1. **选择摄像头**：顶部下拉选择摄像头
 2. **查看模式**：
-   - 按日期查看：选择指定日期的录像
+   - 按日期查看：选择指定日期的录像（支持最早/昨天/今天快捷切换）
    - 全部时间线：查看该摄像头全部录像
+   - 实时预览：扫码登录小米账号后观看直播
 3. **时间线操作**：
    - 鼠标悬停：显示预览与时间
    - 点击：播放对应录像
@@ -69,7 +77,9 @@ npm run build:win
 4. **播放控制**：
    - 播放/暂停（按钮）与倍速调节（滑块 + 快捷档位）
    - 全屏：点击视频区按钮或进入全屏
-5. **设置**：右上角齿轮可配置视频目录、预览框大小
+5. **实时预览**：
+   - 滚轮缩放画面，双击全屏/退出全屏，缩放后可拖拽平移
+6. **设置**：右上角齿轮可配置视频目录、预览框大小、实时预览开关
 
 ## 📦 目录结构
 
@@ -79,6 +89,13 @@ MIVideoViewer/
 │   ├── index.html        # 页面结构
 │   ├── style.css         # 玻璃拟态样式
 │   └── app.js            # 前端逻辑
+├── src/                  # 后端实时预览模块
+│   ├── go2rtc-process.js # go2rtc 子进程管理
+│   ├── live-proxy.js     # 实时流反向代理
+│   ├── live-warmup.js    # 流预热（秒开）
+│   ├── safe-store.js     # 凭据安全存储
+│   ├── xiaomi-cloud.js   # 小米云端 API 客户端
+│   └── xiaomi-qr.js      # 小米二维码登录
 ├── server.js             # Express 后端服务
 ├── electron-main.js      # Electron 主进程（窗口、打包）
 ├── preload.js            # Electron 安全桥接
@@ -86,10 +103,10 @@ MIVideoViewer/
 │   ├── afterPack.js      # 打包后精简（清理语言包等）
 │   ├── icon.ico          # 应用图标
 │   └── make-icon.js      # 图标生成脚本
+├── resources/            # 运行时资源（go2rtc.exe 等）
 ├── config.json           # 配置文件
 ├── package.json          # 项目与打包配置
 ├── start.bat             # Windows 命令行启动脚本
-├── start.py              # Python 启动脚本
 └── README.md             # 说明文档
 ```
 
@@ -127,6 +144,10 @@ X:\xiaomi_camera_videos\
 | videoBasePath | 视频根目录路径 | X:\xiaomi_camera_videos |
 | port | 服务器端口 | 3000 |
 | previewSize | 预览框大小（small/medium/large） | medium |
+| live.enabled | 是否启用实时预览 | false |
+| live.go2rtc.baseUrl | go2rtc 服务地址 | http://127.0.0.1:1984 |
+| live.go2rtc.exePath | go2rtc.exe 路径（留空自动查找） | 空 |
+| live.warmup | 是否启用流预热 | true |
 
 ## 🧱 技术栈
 
@@ -135,6 +156,7 @@ X:\xiaomi_camera_videos\
 - 界面风格：玻璃拟态（Glassmorphism）
 - 视频播放：HTML5 Video API
 - 时间线渲染：Canvas
+- 实时预览：go2rtc（WebRTC / MSE）
 - 桌面打包：Electron + electron-builder
 
 ## ❓ 常见问题
@@ -147,6 +169,9 @@ X:\xiaomi_camera_videos\
 
 **3. 时间线显示异常**
 刷新页面；检查视频文件命名是否符合 `MMMSS_timestamp.mp4` 格式。
+
+**4. 实时预览不可用**
+确认 `live.enabled` 已开启、go2rtc.exe 已放入 `resources/` 目录（或已配置 exePath），并在设置中扫码登录小米账号。
 
 ## 📄 许可证
 
