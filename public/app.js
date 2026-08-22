@@ -1830,12 +1830,9 @@ async function fetchCameras() {
             elements.cameraSelect.value = state.selectedCamera;
             // 重建自定义下拉选项，并同步当前选中显示
             if (customSelects.cameraSelect) customSelects.cameraSelect.rebuild();
-            if (state.viewMode === 'date') {
-                await setDefaultDate();
-                fetchVideos();
-            } else {
-                fetchVideos();
-            }
+            // 始终获取日期列表并默认选中最新日期，保证第一帧与时间线日期一致
+            await setDefaultDate();
+            fetchVideos();
         } else if (placeholder) {
             placeholder.textContent = '未发现摄像头，请检查视频目录配置';
             placeholder.style.display = 'block';
@@ -2089,15 +2086,14 @@ async function setDefaultDate() {
         const res = await fetch(`/api/dates/${requestCamera}`);
         const data = await res.json();
         if (token !== defaultDateFetchToken
-            || requestCamera !== state.selectedCamera
-            || state.viewMode !== 'date') return;
+            || requestCamera !== state.selectedCamera) return;
         const dates = data.dates || [];
         availableVideoDates = new Set(dates.map(item => item.date));
 
         if (dates.length > 0) {
-            // 保留已选日期（如果仍有效），否则默认选最新日期
+            // 保留已选日期（如果仍有效），否则默认选最早日期
             if (!state.selectedDate || !availableVideoDates.has(state.selectedDate)) {
-                state.selectedDate = dates[dates.length - 1].date;
+                state.selectedDate = dates[0].date;
             }
             elements.dateSelect.value = state.selectedDate;
             elements.datePickerLabel.textContent = state.selectedDate.replace(/-/g, '/');
@@ -3260,9 +3256,14 @@ setupXiaomiQr();
 initCanvas();
 try {
     const savedViewMode = localStorage.getItem(USER_PREF_KEYS.viewMode);
-    if (['date', 'all', 'live'].includes(savedViewMode)) {
-        state.viewMode = savedViewMode;
-        const radio = document.querySelector(`input[name="viewMode"][value="${savedViewMode}"]`);
+    if (savedViewMode === 'live') {
+        state.viewMode = 'live';
+        const radio = document.querySelector(`input[name="viewMode"][value="live"]`);
+        if (radio) radio.checked = true;
+    } else {
+        // 默认按日期模式：启动时选中最新日期，第一帧与时间线日期一致
+        state.viewMode = 'date';
+        const radio = document.querySelector(`input[name="viewMode"][value="date"]`);
         if (radio) radio.checked = true;
     }
     const savedSpeed = Number(localStorage.getItem(USER_PREF_KEYS.speed));
